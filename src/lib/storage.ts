@@ -23,7 +23,33 @@ export function getAllPages(): BirthdayPageConfig[] {
     if (!Array.isArray(parsed) || parsed.length === 0) {
       return [DEFAULT_DEMO_CONFIG];
     }
-    return parsed;
+
+    // Auto-migrate default demo page if it was stored with old legacy default preset
+    let didMigrate = false;
+    const migrated = parsed.map((page: BirthdayPageConfig) => {
+      if (page.id === DEFAULT_DEMO_CONFIG.id || page.slug === DEFAULT_DEMO_CONFIG.slug) {
+        if (!page.theme || page.theme.preset === 'romantic-rose' || !page.theme.giftBoxStyle) {
+          didMigrate = true;
+          return {
+            ...page,
+            theme: DEFAULT_DEMO_CONFIG.theme,
+            landingGreeting: page.landingGreeting || DEFAULT_DEMO_CONFIG.landingGreeting,
+            bgMusicTrackId: page.bgMusicTrackId || DEFAULT_DEMO_CONFIG.bgMusicTrackId
+          };
+        }
+      }
+      return page;
+    });
+
+    if (didMigrate) {
+      try {
+        localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(migrated));
+      } catch {
+        // ignore
+      }
+    }
+
+    return migrated;
   } catch {
     return [DEFAULT_DEMO_CONFIG];
   }
