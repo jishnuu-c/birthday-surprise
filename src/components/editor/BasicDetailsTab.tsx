@@ -1,13 +1,20 @@
 import React from 'react';
 import { BirthdayPageConfig } from '../../types';
-import { User, Calendar, Type, FileText, HeartHandshake } from 'lucide-react';
+import { User, Calendar, Type, FileText, HeartHandshake, Save, RefreshCw, CheckCircle2, Sparkles } from 'lucide-react';
 
 interface BasicDetailsTabProps {
   config: BirthdayPageConfig;
   onChange: (updated: Partial<BirthdayPageConfig>) => void;
+  onSave?: () => void;
+  saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 }
 
-export const BasicDetailsTab: React.FC<BasicDetailsTabProps> = ({ config, onChange }) => {
+export const BasicDetailsTab: React.FC<BasicDetailsTabProps> = ({ 
+  config, 
+  onChange,
+  onSave,
+  saveStatus = 'idle'
+}) => {
   return (
     <div className="space-y-6">
       {/* Recipient Profile */}
@@ -229,6 +236,35 @@ export const BasicDetailsTab: React.FC<BasicDetailsTabProps> = ({ config, onChan
           />
         </div>
       </div>
+
+      {/* Explicit Save Action Footer for Details Tab */}
+      {onSave && (
+        <div className="sticky bottom-4 z-20 p-4 rounded-2xl bg-slate-900/95 border border-pink-500/30 shadow-2xl backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-slate-300">
+            <Sparkles className="w-4 h-4 text-[#E8C982] shrink-0" />
+            <span>Ready to save recipient details & personal message?</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saveStatus === 'saving'}
+            className="w-full sm:w-auto px-6 py-2.5 rounded-full font-bold text-xs sm:text-sm bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-lg shadow-pink-500/25 flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+          >
+            {saveStatus === 'saving' ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : saveStatus === 'saved' ? (
+              <CheckCircle2 className="w-4 h-4" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span>
+              {saveStatus === 'saving' ? 'Saving Details...' : saveStatus === 'saved' ? 'Details Saved!' : 'Save Details Changes'}
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
+

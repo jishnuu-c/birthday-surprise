@@ -1,14 +1,21 @@
 import React from 'react';
 import { BirthdayPageConfig, FontPairing, GiftBoxStyle, ThemePreset } from '../../types';
 import { THEME_PRESETS, GIFT_BOX_STYLES } from '../../constants/presets';
-import { Palette, Gift, Type, Sparkles, Volume2 } from 'lucide-react';
+import { Palette, Gift, Type, Sparkles, Volume2, Save, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 interface ThemeCustomizerTabProps {
   config: BirthdayPageConfig;
   onChange: (updated: Partial<BirthdayPageConfig>) => void;
+  onSave?: () => void;
+  saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 }
 
-export const ThemeCustomizerTab: React.FC<ThemeCustomizerTabProps> = ({ config, onChange }) => {
+export const ThemeCustomizerTab: React.FC<ThemeCustomizerTabProps> = ({ 
+  config, 
+  onChange,
+  onSave,
+  saveStatus = 'idle'
+}) => {
   const currentTheme = config.theme;
 
   const handleSelectPreset = (presetKey: ThemePreset) => {
@@ -253,6 +260,35 @@ export const ThemeCustomizerTab: React.FC<ThemeCustomizerTabProps> = ({ config, 
           </label>
         </div>
       </div>
+
+      {/* Explicit Save Action Footer for Theme Tab */}
+      {onSave && (
+        <div className="sticky bottom-4 z-20 p-4 rounded-2xl bg-slate-900/95 border border-pink-500/30 shadow-2xl backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-slate-300">
+            <Sparkles className="w-4 h-4 text-[#E8C982] shrink-0" />
+            <span>Ready to save theme, colors & font styling?</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saveStatus === 'saving'}
+            className="w-full sm:w-auto px-6 py-2.5 rounded-full font-bold text-xs sm:text-sm bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-lg shadow-pink-500/25 flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+          >
+            {saveStatus === 'saving' ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : saveStatus === 'saved' ? (
+              <CheckCircle2 className="w-4 h-4" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span>
+              {saveStatus === 'saving' ? 'Saving Theme...' : saveStatus === 'saved' ? 'Theme Saved!' : 'Save Theme Changes'}
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
+

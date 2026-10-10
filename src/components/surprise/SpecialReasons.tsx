@@ -21,14 +21,14 @@ export const SpecialReasons: React.FC<SpecialReasonsProps> = ({ config }) => {
     <section className="py-20 px-4 max-w-6xl mx-auto relative z-10">
       {/* Header */}
       <div className="text-center max-w-2xl mx-auto mb-16">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-pink-500/10 border border-pink-500/20 text-pink-300 text-xs font-semibold uppercase tracking-wider mb-4">
-          <Heart className="w-3.5 h-3.5 fill-pink-500 text-pink-500" />
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-luxury border border-[#E8C982]/30 text-[#E8C982] text-xs font-semibold uppercase tracking-wider mb-4">
+          <Heart className="w-3.5 h-3.5 fill-[#C72C55] text-[#C72C55]" />
           <span>Why You Are Irreplaceable</span>
         </div>
-        <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-slate-100 font-elegant">
+        <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-[#FFF8F0] font-elegant">
           {config.reasonsHeading || 'Reasons You Are Special'}
         </h2>
-        <p className="mt-3 text-slate-400 text-sm sm:text-base">
+        <p className="mt-3 text-[#F7DCE5]/80 text-sm sm:text-base">
           {config.reasonsSubtitle || 'Tap any card to reveal what makes you so incredibly wonderful.'}
         </p>
       </div>
@@ -53,8 +53,8 @@ export const SpecialReasons: React.FC<SpecialReasonsProps> = ({ config }) => {
                 animate={{ rotateY: isFlipped ? 180 : 0 }}
               >
                 {/* Front Side */}
-                <div className="absolute inset-0 backface-hidden rounded-2xl glass-panel p-6 border border-white/15 group-hover:border-pink-500/40 flex flex-col items-center justify-center text-center shadow-xl group-hover:shadow-pink-500/10 group-hover:scale-[1.02] transition-all">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-pink-500/20 to-purple-500/20 border border-white/20 flex items-center justify-center text-3xl mb-4 shadow-inner">
+                <div className="absolute inset-0 backface-hidden rounded-2xl glass-luxury p-6 border border-[#E8C982]/25 group-hover:border-[#E8C982]/60 flex flex-col items-center justify-center text-center shadow-xl group-hover:shadow-[#E8C982]/15 group-hover:scale-[1.02] transition-all">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#C72C55]/30 to-[#E8C982]/20 border border-[#E8C982]/30 flex items-center justify-center text-3xl mb-4 shadow-inner">
                     {reason.emoji || '✨'}
                   </div>
 

@@ -52,15 +52,15 @@ export const CelebrationHero: React.FC<CelebrationHeroProps> = ({
           transition={{ duration: 0.7 }}
           className="flex flex-wrap items-center justify-center gap-2"
         >
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs sm:text-sm font-semibold tracking-wider uppercase text-pink-300 shadow-lg">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-luxury border border-[#E8C982]/30 text-xs sm:text-sm font-semibold tracking-wider uppercase text-[#E8C982] shadow-lg">
+            <Sparkles className="w-3.5 h-3.5 text-[#E8C982]" />
             <span>A Day Dedicated Entirely to You</span>
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <Sparkles className="w-3.5 h-3.5 text-[#E8C982]" />
           </div>
 
           {config.showAgeCountdown && config.targetAge && (
-            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold shadow-md">
-              <Cake className="w-3.5 h-3.5 text-amber-400" />
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#4A1028]/80 border border-[#E8C982]/40 text-[#FFF8F0] text-xs font-bold shadow-md">
+              <Cake className="w-3.5 h-3.5 text-[#E8C982]" />
               <span>Celebrating Year {config.targetAge}!</span>
             </div>
           )}
@@ -74,11 +74,11 @@ export const CelebrationHero: React.FC<CelebrationHeroProps> = ({
           className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight leading-tight"
           style={{ fontFamily: currentPreset.headingFont }}
         >
-          <span className="block text-slate-100">HAPPY BIRTHDAY,</span>
+          <span className="block text-[#FFF8F0]">HAPPY BIRTHDAY,</span>
           <span 
-            className="shimmer-text block mt-1"
+            className="shimmer-gold block mt-1"
             style={{
-              textShadow: `0 0 40px ${config.theme.primaryColor || currentPreset.primaryColor}80`
+              textShadow: '0 0 45px rgba(232, 201, 130, 0.5)'
             }}
           >
             {recipient.toUpperCase()}!
@@ -96,12 +96,12 @@ export const CelebrationHero: React.FC<CelebrationHeroProps> = ({
           <div 
             className="absolute -inset-2 rounded-3xl blur-xl opacity-60 group-hover:opacity-90 transition-opacity duration-500"
             style={{
-              background: `linear-gradient(135deg, ${config.theme.primaryColor || currentPreset.primaryColor}, ${config.theme.accentColor || currentPreset.accentColor})`
+              background: 'linear-gradient(135deg, rgba(232, 201, 130, 0.6), rgba(199, 44, 85, 0.6))'
             }}
           />
 
           {/* Card Frame */}
-          <div className="relative w-56 h-56 sm:w-72 sm:h-72 md:w-80 md:h-80 rounded-3xl overflow-hidden p-2 bg-slate-900/80 backdrop-blur-md border border-white/25 shadow-2xl transition-transform duration-500 group-hover:scale-[1.03]">
+          <div className="relative w-56 h-56 sm:w-72 sm:h-72 md:w-80 md:h-80 rounded-3xl overflow-hidden p-2 bg-[#160D1F]/90 backdrop-blur-md border border-[#E8C982]/35 shadow-2xl transition-transform duration-500 group-hover:scale-[1.03]">
             {config.profilePhotoUrl ? (
               <img
                 src={config.profilePhotoUrl}
@@ -110,17 +110,18 @@ export const CelebrationHero: React.FC<CelebrationHeroProps> = ({
                 loading="eager"
               />
             ) : (
-              <div className="w-full h-full rounded-2xl bg-gradient-to-tr from-pink-500/20 to-purple-500/20 flex flex-col items-center justify-center p-6 text-center">
-                <Heart className="w-16 h-16 text-pink-400 animate-bounce mb-2" />
-                <p className="text-sm font-semibold text-pink-200">The Guest of Honor</p>
-                <p className="text-xs text-slate-400 mt-1">{recipient}</p>
+              <div className="w-full h-full rounded-2xl bg-gradient-to-tr from-[#C72C55]/20 to-[#4A1028]/40 flex flex-col items-center justify-center p-6 text-center">
+                <Heart className="w-16 h-16 text-[#E8C982] animate-bounce mb-2" />
+                <p className="text-sm font-semibold text-[#FFF8F0]">The Guest of Honor</p>
+                <p className="text-xs text-[#F7DCE5]/70 mt-1">{recipient}</p>
               </div>
             )}
 
             {/* Nickname overlay tag */}
             {config.nickname && (
-              <div className="absolute bottom-4 inset-x-4 mx-auto w-max px-4 py-1.5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 text-white font-medium text-xs sm:text-sm shadow-lg flex items-center gap-1.5">
-                <span>✨ {config.nickname}</span>
+              <div className="absolute bottom-4 inset-x-4 mx-auto w-max px-4 py-1.5 rounded-full bg-[#160D1F]/85 backdrop-blur-md border border-[#E8C982]/40 text-[#FFF8F0] font-medium text-xs sm:text-sm shadow-lg flex items-center gap-1.5">
+                <span className="text-[#E8C982]">✨</span>
+                <span>{config.nickname}</span>
               </div>
             )}
           </div>
@@ -131,7 +132,7 @@ export const CelebrationHero: React.FC<CelebrationHeroProps> = ({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6, duration: 0.8 }}
-          className="text-base sm:text-xl text-slate-300 max-w-2xl font-normal leading-relaxed"
+          className="text-base sm:text-xl text-[#FFF8F0]/90 max-w-2xl font-normal leading-relaxed"
         >
           {config.heroSubtitle || 'Today the entire universe pauses to celebrate the most incredible person in our lives.'}
         </motion.p>
@@ -142,9 +143,9 @@ export const CelebrationHero: React.FC<CelebrationHeroProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.7 }}
-            className="flex items-center gap-2 text-xs sm:text-sm text-pink-300/90 font-medium"
+            className="flex items-center gap-2 text-xs sm:text-sm text-[#E8C982] font-medium"
           >
-            <Calendar className="w-4 h-4 text-pink-400" />
+            <Calendar className="w-4 h-4 text-[#E8C982]" />
             <span>
               {new Date(config.birthDate).toLocaleDateString('en-US', {
                 month: 'long',
@@ -166,10 +167,10 @@ export const CelebrationHero: React.FC<CelebrationHeroProps> = ({
             onClick={onScrollToNext || (() => {
               window.scrollBy({ top: window.innerHeight * 0.85, behavior: 'smooth' });
             })}
-            className="px-6 py-3 rounded-full glass-panel hover:bg-white/15 border border-white/20 text-white text-sm font-semibold flex items-center gap-2 shadow-lg transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
+            className="px-6 py-3 rounded-full glass-luxury hover:bg-[#4A1028]/60 border border-[#E8C982]/40 text-[#FFF8F0] text-sm font-semibold flex items-center gap-2 shadow-xl transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
           >
             <span>Continue the Surprise</span>
-            <ChevronDown className="w-4 h-4 text-pink-400 animate-bounce" />
+            <ChevronDown className="w-4 h-4 text-[#E8C982] animate-bounce" />
           </button>
         </motion.div>
       </div>

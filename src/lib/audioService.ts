@@ -1,4 +1,5 @@
 // Web Audio API Synthesizer & Advanced Audio Engine for Birthday Magic
+import { getMediaBlobUrl } from './mediaDb';
 
 export interface AudioState {
   isPlaying: boolean;
@@ -20,7 +21,7 @@ class BirthdayAudioEngine {
   private masterGain: GainNode | null = null;
   private currentTrackId: string = 'synth-happy-birthday-warm';
   private currentCustomUrl?: string;
-  private volume: number = 0.8;
+  private volume: number = 0.85;
   private duration: number = 0;
   private currentTime: number = 0;
   private lastError: string | null = null;
@@ -30,22 +31,26 @@ class BirthdayAudioEngine {
     // AudioContext will be initialized on first user interaction to comply with browser autoplay policies
   }
 
-  private initContext() {
+  private initContext(): AudioContext | null {
     try {
       if (!this.ctx) {
         const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         if (AudioContextClass) {
           this.ctx = new AudioContextClass();
           this.masterGain = this.ctx.createGain();
-          this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume * 0.6, this.ctx.currentTime);
+          this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume * 0.75, this.ctx.currentTime);
           this.masterGain.connect(this.ctx.destination);
         }
       }
       if (this.ctx && this.ctx.state === 'suspended') {
-        this.ctx.resume().catch(() => {});
+        this.ctx.resume().catch((err) => {
+          console.warn('AudioContext resume deferred:', err);
+        });
       }
+      return this.ctx;
     } catch (e) {
       console.warn('AudioContext init notice:', e);
+      return null;
     }
   }
 
@@ -85,29 +90,52 @@ class BirthdayAudioEngine {
     if (this.isPlaying) {
       this.pause();
     } else {
-      this.play(trackId || this.currentTrackId, customUrl || this.currentCustomUrl);
+      this.play(trackId || this.currentTrackId, customUrl !== undefined ? customUrl : this.currentCustomUrl);
     }
   }
 
-  public play(trackId: string = 'synth-happy-birthday-warm', customUrl?: string) {
-    this.initContext();
+  public async play(trackId: string = 'synth-happy-birthday-warm', customUrl?: string) {
+    const ctx = this.initContext();
+    if (ctx && ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch {
+        // ignore
+      }
+    }
+
     this.currentTrackId = trackId;
     this.currentCustomUrl = customUrl;
     this.lastError = null;
 
     if (customUrl && customUrl.trim() !== '') {
       this.stopSynth();
+      // If URL is an IndexedDB reference key, resolve it to blob URL
+      if (customUrl.startsWith('indexeddb:')) {
+        const key = customUrl.replace('indexeddb:', '');
+        const resolvedBlobUrl = await getMediaBlobUrl(key);
+        if (resolvedBlobUrl) {
+          this.setupHtmlAudio(resolvedBlobUrl);
+        } else {
+          // Fall back to synth if blob not found
+          this.isPlaying = true;
+          this.startSynthMelody(trackId);
+          this.notify();
+        }
+        return;
+      }
+
       this.setupHtmlAudio(customUrl);
       return;
     }
 
-    // If no custom URL, stop HTML audio and play Synth Melody
+    // If no custom URL, stop HTML audio and play Built-in Synth Melody
     if (this.htmlAudio) {
       this.htmlAudio.pause();
     }
 
-    this.startSynthMelody(trackId);
     this.isPlaying = true;
+    this.startSynthMelody(trackId);
     this.notify();
   }
 
@@ -141,8 +169,10 @@ class BirthdayAudioEngine {
 
       this.htmlAudio.addEventListener('error', (e) => {
         console.warn('HTML Audio error event:', e);
-        this.lastError = 'Could not load audio file. Please ensure it is a valid MP3, WAV, M4A, or OGG format.';
-        this.isPlaying = false;
+        this.lastError = 'Could not load audio file. Falling back to built-in birthday melody.';
+        // Fall back to built-in synth so user always hears music
+        this.isPlaying = true;
+        this.startSynthMelody(this.currentTrackId);
         this.notify();
       });
     }
@@ -164,14 +194,14 @@ class BirthdayAudioEngine {
           this.notify();
         })
         .catch((err) => {
-          // Autoplay blocked by browser until user interaction, or decoding issue
+          console.warn('Audio play rejection:', err);
           if (err.name === 'NotAllowedError') {
-            console.log('Autoplay deferred until user interaction');
+            this.lastError = 'Tap Play to start birthday music!';
           } else {
-            console.warn('Audio play rejection:', err);
-            this.lastError = 'Audio playback was blocked or format unsupported. Tap Play to listen.';
+            // If failed to decode custom audio, play built-in synth
+            this.isPlaying = true;
+            this.startSynthMelody(this.currentTrackId);
           }
-          this.isPlaying = false;
           this.notify();
         });
     }
@@ -209,7 +239,7 @@ class BirthdayAudioEngine {
       this.htmlAudio.volume = this.volume;
     }
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume * 0.6, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume * 0.75, this.ctx.currentTime);
     }
     this.notify();
   }
@@ -217,7 +247,7 @@ class BirthdayAudioEngine {
   public setMute(mute: boolean) {
     this.isMuted = mute;
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(mute ? 0 : this.volume * 0.6, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(mute ? 0 : this.volume * 0.75, this.ctx.currentTime);
     }
     if (this.htmlAudio) {
       this.htmlAudio.muted = mute;
@@ -249,10 +279,10 @@ class BirthdayAudioEngine {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(180, now);
-      osc.frequency.exponentialRampToValueAtTime(720, now + 0.35);
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.35);
       gain.gain.setValueAtTime(0.4 * this.volume, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
       osc.connect(gain);
       gain.connect(this.masterGain);
       osc.start(now);
@@ -264,13 +294,13 @@ class BirthdayAudioEngine {
         const chimeOsc = this.ctx!.createOscillator();
         const chimeGain = this.ctx!.createGain();
         chimeOsc.type = 'sine';
-        chimeOsc.frequency.setValueAtTime(freq, now + 0.1 + i * 0.07);
-        chimeGain.gain.setValueAtTime(0.25 * this.volume, now + 0.1 + i * 0.07);
-        chimeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8 + i * 0.07);
+        chimeOsc.frequency.setValueAtTime(freq, now + 0.08 + i * 0.06);
+        chimeGain.gain.setValueAtTime(0.3 * this.volume, now + 0.08 + i * 0.06);
+        chimeGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.8 + i * 0.06);
         chimeOsc.connect(chimeGain);
         chimeGain.connect(this.masterGain!);
-        chimeOsc.start(now + 0.1 + i * 0.07);
-        chimeOsc.stop(now + 0.9 + i * 0.07);
+        chimeOsc.start(now + 0.08 + i * 0.06);
+        chimeOsc.stop(now + 0.9 + i * 0.06);
       });
     } catch {
       // Ignore audio error if context not ready
@@ -283,7 +313,6 @@ class BirthdayAudioEngine {
 
     try {
       const now = this.ctx.currentTime;
-      // Noise burst for blow
       const bufferSize = this.ctx.sampleRate * 0.8;
       const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
       const data = buffer.getChannelData(0);
@@ -299,15 +328,14 @@ class BirthdayAudioEngine {
       filter.frequency.exponentialRampToValueAtTime(200, now + 0.7);
 
       const gain = this.ctx.createGain();
-      gain.gain.setValueAtTime(0.3 * this.volume, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+      gain.gain.setValueAtTime(0.35 * this.volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
 
       noise.connect(filter);
       filter.connect(gain);
       gain.connect(this.masterGain);
       noise.start(now);
 
-      // Magical sparkle chime upon blowing
       setTimeout(() => {
         this.playCelebrationFanfare();
       }, 500);
@@ -334,8 +362,8 @@ class BirthdayAudioEngine {
         const gain = this.ctx!.createGain();
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(f, now + t);
-        gain.gain.setValueAtTime(0.35 * this.volume, now + t);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + t + d);
+        gain.gain.setValueAtTime(0.4 * this.volume, now + t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + t + d);
         osc.connect(gain);
         gain.connect(this.masterGain!);
         osc.start(now + t);
@@ -357,8 +385,8 @@ class BirthdayAudioEngine {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(320, now);
       osc.frequency.exponentialRampToValueAtTime(880, now + 0.2);
-      gain.gain.setValueAtTime(0.2 * this.volume, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      gain.gain.setValueAtTime(0.25 * this.volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
       osc.connect(gain);
       gain.connect(this.masterGain);
       osc.start(now);
@@ -378,45 +406,51 @@ class BirthdayAudioEngine {
 
   private startSynthMelody(trackId: string) {
     this.stopSynth();
-    if (!this.ctx || !this.masterGain) return;
+    const ctx = this.initContext();
+    if (!ctx || !this.masterGain) return;
 
-    // Birthday melody in C Major / G Major chords
-    const melodies: Record<string, { notes: number[], speed: number }> = {
+    // Birthday melody in C Major / G Major with rich acoustic harmony
+    const melodies: Record<string, { notes: number[], speed: number, type: OscillatorType }> = {
       'synth-happy-birthday-warm': {
         notes: [
           261.63, 261.63, 293.66, 261.63, 349.23, 329.63, // Happy birthday to you
           261.63, 261.63, 293.66, 261.63, 392.00, 349.23, // Happy birthday to you
-          261.63, 261.63, 523.25, 440.00, 349.23, 329.63, 293.66, // Happy birthday dear...
+          261.63, 261.63, 523.25, 440.00, 349.23, 329.63, 293.66, // Happy birthday dear Sophia
           466.16, 466.16, 440.00, 349.23, 392.00, 349.23  // Happy birthday to you
         ],
-        speed: 480
+        speed: 460,
+        type: 'triangle'
       },
       'synth-dreamy-piano': {
         notes: [
           329.63, 392.00, 493.88, 587.33, 659.25, 587.33, 493.88, 392.00,
           293.66, 369.99, 440.00, 587.33, 554.37, 440.00, 369.99, 293.66
         ],
-        speed: 380
+        speed: 380,
+        type: 'sine'
       },
       'synth-romantic-strings': {
         notes: [
           261.63, 329.63, 392.00, 523.25, 659.25, 523.25, 392.00, 329.63,
           220.00, 261.63, 329.63, 440.00, 523.25, 440.00, 329.63, 261.63
         ],
-        speed: 520
+        speed: 500,
+        type: 'triangle'
       },
       'synth-lofi-chill': {
         notes: [
           261.63, 329.63, 392.00, 493.88, 392.00, 329.63, 293.66, 369.99,
           440.00, 554.37, 440.00, 369.99
         ],
-        speed: 420
+        speed: 420,
+        type: 'sine'
       },
       'synth-cinematic-epic': {
         notes: [
           196.00, 261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50
         ],
-        speed: 460
+        speed: 460,
+        type: 'triangle'
       }
     };
 
@@ -428,31 +462,49 @@ class BirthdayAudioEngine {
       const freq = currentMelody.notes[noteIdx];
       const now = this.ctx.currentTime;
 
-      // Polyphonic warm tone
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
+      // Primary tone
+      const osc1 = this.ctx.createOscillator();
+      const gain1 = this.ctx.createGain();
+      osc1.type = currentMelody.type;
+      osc1.frequency.setValueAtTime(freq, now);
 
-      osc.type = trackId === 'synth-romantic-strings' ? 'triangle' : 'sine';
-      osc.frequency.setValueAtTime(freq, now);
+      // Warm harmonic overtone (subtle shimmer bell)
+      const osc2 = this.ctx.createOscillator();
+      const gain2 = this.ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(freq * 2, now); // Octave overtone
 
-      const noteDuration = (currentMelody.speed / 1000) * 1.6;
-      gain.gain.setValueAtTime(0.001, now);
-      gain.gain.exponentialRampToValueAtTime(0.18 * this.volume, now + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + noteDuration);
+      const noteDuration = (currentMelody.speed / 1000) * 1.5;
 
-      osc.connect(gain);
-      gain.connect(this.masterGain);
+      // ADSR Envelope for osc1
+      gain1.gain.setValueAtTime(0.0001, now);
+      gain1.gain.exponentialRampToValueAtTime(0.35 * this.volume, now + 0.03);
+      gain1.gain.exponentialRampToValueAtTime(0.0001, now + noteDuration);
 
-      osc.start(now);
-      osc.stop(now + noteDuration + 0.1);
+      // ADSR Envelope for osc2
+      gain2.gain.setValueAtTime(0.0001, now);
+      gain2.gain.exponentialRampToValueAtTime(0.12 * this.volume, now + 0.02);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, now + noteDuration * 0.7);
+
+      osc1.connect(gain1);
+      gain1.connect(this.masterGain);
+
+      osc2.connect(gain2);
+      gain2.connect(this.masterGain);
+
+      osc1.start(now);
+      osc1.stop(now + noteDuration + 0.1);
+
+      osc2.start(now);
+      osc2.stop(now + noteDuration + 0.1);
 
       noteIdx = (noteIdx + 1) % currentMelody.notes.length;
     };
 
+    // Play first note immediately and start interval
     playNextNote();
     this.activeSynthTimer = window.setInterval(playNextNote, currentMelody.speed);
   }
 }
 
 export const audioEngine = new BirthdayAudioEngine();
-

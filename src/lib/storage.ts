@@ -1,7 +1,7 @@
 import { BirthdayPageConfig } from '../types';
 import { DEFAULT_DEMO_CONFIG } from '../constants/presets';
 import { fetchRemoteBirthdayPage, isSupabaseConfigured, saveRemoteBirthdayPage } from './supabase';
-import { getMediaBlobUrl } from './mediaDb';
+import { getMediaBlobUrl, getMediaRecord, deleteMediaBlob } from './mediaDb';
 
 const STORAGE_KEY_PAGES = 'birthday_magic_pages_v1';
 const STORAGE_KEY_CURRENT = 'birthday_magic_active_page_id';
@@ -39,7 +39,6 @@ export async function resolvePageAsync(idOrSlug: string): Promise<BirthdayPageCo
   // 1. Check local storage
   const local = getPageById(idOrSlug);
   if (local) {
-    // If local has indexedDB references for audio or video, resolve them
     const resolved = await resolveLocalMediaUrls(local);
     return resolved;
   }
@@ -52,7 +51,8 @@ export async function resolvePageAsync(idOrSlug: string): Promise<BirthdayPageCo
       const parsed = JSON.parse(json) as BirthdayPageConfig;
       if (parsed && parsed.recipientName) {
         savePageLocally(parsed);
-        return parsed;
+        const resolved = await resolveLocalMediaUrls(parsed);
+        return resolved;
       }
     } catch (e) {
       console.warn('Failed to parse hash payload:', e);
@@ -64,91 +64,161 @@ export async function resolvePageAsync(idOrSlug: string): Promise<BirthdayPageCo
     const remote = await fetchRemoteBirthdayPage(idOrSlug);
     if (remote) {
       savePageLocally(remote);
-      return remote;
+      const resolved = await resolveLocalMediaUrls(remote);
+      return resolved;
     }
   }
 
   return null;
 }
 
-async function resolveLocalMediaUrls(config: BirthdayPageConfig): Promise<BirthdayPageConfig> {
+export async function resolveLocalMediaUrls(config: BirthdayPageConfig): Promise<BirthdayPageConfig> {
   const copy = { ...config };
-  if (copy.customAudioUrl && copy.customAudioUrl.startsWith('indexeddb:')) {
-    const key = copy.customAudioUrl.replace('indexeddb:', '');
-    const blobUrl = await getMediaBlobUrl(key);
+
+  // 1. Audio resolution
+  if (copy.customAudioUrl) {
+    if (copy.customAudioUrl.startsWith('indexeddb:')) {
+      const key = copy.customAudioUrl.replace('indexeddb:', '');
+      const blobUrl = await getMediaBlobUrl(key);
+      if (blobUrl) {
+        copy.customAudioUrl = blobUrl;
+      }
+    } else if (copy.customAudioUrl.startsWith('blob:')) {
+      // Check if we have an indexeddb fallback for this page
+      const fallbackKey = `audio-${copy.id}`;
+      const blobUrl = await getMediaBlobUrl(fallbackKey);
+      if (blobUrl) {
+        copy.customAudioUrl = blobUrl;
+      }
+    }
+  } else {
+    // Check if indexeddb has an audio record for this page
+    const fallbackKey = `audio-${copy.id}`;
+    const blobUrl = await getMediaBlobUrl(fallbackKey);
     if (blobUrl) {
       copy.customAudioUrl = blobUrl;
     }
   }
-  if (copy.videoUrl && copy.videoUrl.startsWith('indexeddb:')) {
-    const key = copy.videoUrl.replace('indexeddb:', '');
-    const blobUrl = await getMediaBlobUrl(key);
+
+  // 2. Video resolution
+  if (copy.videoUrl) {
+    if (copy.videoUrl.startsWith('indexeddb:')) {
+      const key = copy.videoUrl.replace('indexeddb:', '');
+      const blobUrl = await getMediaBlobUrl(key);
+      if (blobUrl) {
+        copy.videoUrl = blobUrl;
+      }
+    } else if (copy.videoUrl.startsWith('blob:')) {
+      const fallbackKey = `video-${copy.id}`;
+      const blobUrl = await getMediaBlobUrl(fallbackKey);
+      if (blobUrl) {
+        copy.videoUrl = blobUrl;
+      }
+    }
+  } else {
+    const fallbackKey = `video-${copy.id}`;
+    const blobUrl = await getMediaBlobUrl(fallbackKey);
     if (blobUrl) {
       copy.videoUrl = blobUrl;
     }
   }
+
+  // 3. Voice message resolution
+  if (copy.voiceMessageUrl && copy.voiceMessageUrl.startsWith('indexeddb:')) {
+    const key = copy.voiceMessageUrl.replace('indexeddb:', '');
+    const blobUrl = await getMediaBlobUrl(key);
+    if (blobUrl) {
+      copy.voiceMessageUrl = blobUrl;
+    }
+  }
+
   return copy;
 }
 
-export function savePageLocally(config: BirthdayPageConfig): void {
+/**
+ * Persists page configuration safely to localStorage with proper media key preservation
+ */
+export function savePageLocally(config: BirthdayPageConfig): { success: boolean; error?: string } {
   try {
     const pages = getAllPages();
     const index = pages.findIndex(p => p.id === config.id);
-    const updated = {
-      ...config,
-      updatedAt: new Date().toISOString()
-    };
+    
+    // Convert ephemeral session blob: URLs to persistent indexeddb: keys for storage
+    const storageConfig = { ...config, updatedAt: new Date().toISOString() };
+    
+    if (storageConfig.customAudioUrl && storageConfig.customAudioUrl.startsWith('blob:')) {
+      storageConfig.customAudioUrl = `indexeddb:audio-${config.id}`;
+    }
+    if (storageConfig.videoUrl && storageConfig.videoUrl.startsWith('blob:')) {
+      storageConfig.videoUrl = `indexeddb:video-${config.id}`;
+    }
+    if (storageConfig.voiceMessageUrl && storageConfig.voiceMessageUrl.startsWith('blob:')) {
+      storageConfig.voiceMessageUrl = `indexeddb:voice-${config.id}`;
+    }
 
     if (index >= 0) {
-      pages[index] = updated;
+      pages[index] = storageConfig;
     } else {
-      pages.push(updated);
+      pages.push(storageConfig);
     }
 
     localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(pages));
-  } catch (err) {
-    console.warn('localStorage save warning (may be quota full):', err);
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Storage quota exceeded';
+    console.warn('localStorage save warning:', err);
+    return { success: false, error: msg };
   }
 }
 
+/**
+ * Unified save function: saves locally and syncs to Supabase if configured
+ */
+export async function savePage(config: BirthdayPageConfig): Promise<{ success: boolean; error?: string }> {
+  const localRes = savePageLocally(config);
+  if (!localRes.success) {
+    return localRes;
+  }
+
+  if (isSupabaseConfigured) {
+    const remoteRes = await saveRemoteBirthdayPage(config);
+    if (!remoteRes.success) {
+      return {
+        success: true, // Saved locally at least
+        error: `Saved locally, but remote sync noticed: ${remoteRes.error}`
+      };
+    }
+  }
+
+  return { success: true };
+}
+
 export async function saveAndPublishPage(config: BirthdayPageConfig): Promise<{ success: boolean; url: string; error?: string }> {
-  // Update local
   const publishedConfig: BirthdayPageConfig = {
     ...config,
     isPublished: true,
     updatedAt: new Date().toISOString()
   };
-  savePageLocally(publishedConfig);
+  
+  const saveRes = await savePage(publishedConfig);
 
-  let remoteError: string | undefined;
-
-  // Sync to Supabase if configured
-  if (isSupabaseConfigured) {
-    const result = await saveRemoteBirthdayPage(publishedConfig);
-    if (!result.success) {
-      remoteError = result.error;
-    }
-  }
-
-  // Generate public URL
   const origin = window.location.origin;
   const publicUrl = `${origin}/b/${config.slug || config.id}`;
 
   return {
-    success: true,
+    success: saveRes.success,
     url: publicUrl,
-    error: remoteError
+    error: saveRes.error
   };
 }
 
 export function generateShareableDataUrl(config: BirthdayPageConfig): string {
   try {
-    // Exclude oversized local-only blobs from hash URL
     const exportableConfig = { ...config };
-    if (exportableConfig.customAudioUrl && (exportableConfig.customAudioUrl.startsWith('blob:') || exportableConfig.customAudioUrl.length > 200000)) {
+    if (exportableConfig.customAudioUrl && (exportableConfig.customAudioUrl.startsWith('blob:') || exportableConfig.customAudioUrl.startsWith('indexeddb:') || exportableConfig.customAudioUrl.length > 200000)) {
       exportableConfig.customAudioUrl = '';
     }
-    if (exportableConfig.videoUrl && (exportableConfig.videoUrl.startsWith('blob:') || exportableConfig.videoUrl.length > 200000)) {
+    if (exportableConfig.videoUrl && (exportableConfig.videoUrl.startsWith('blob:') || exportableConfig.videoUrl.startsWith('indexeddb:') || exportableConfig.videoUrl.length > 200000)) {
       exportableConfig.videoUrl = '';
     }
 
@@ -165,6 +235,10 @@ export function deletePage(id: string): void {
   const pages = getAllPages().filter(p => p.id !== id);
   try {
     localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(pages));
+    // Clean up local media associated with page
+    deleteMediaBlob(`audio-${id}`).catch(() => {});
+    deleteMediaBlob(`video-${id}`).catch(() => {});
+    deleteMediaBlob(`voice-${id}`).catch(() => {});
   } catch {
     // ignore
   }
@@ -248,4 +322,5 @@ export function compressImageFile(file: File, maxWidth = 1200, quality = 0.85): 
     reader.onerror = (err) => reject(err);
   });
 }
+
 

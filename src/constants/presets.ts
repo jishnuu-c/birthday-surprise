@@ -16,15 +16,29 @@ export interface ThemePresetDetails {
 }
 
 export const THEME_PRESETS: Record<ThemePreset, ThemePresetDetails> = {
+  'luxury-plum-gold': {
+    id: 'luxury-plum-gold',
+    name: 'Midnight Plum & Champagne Gold',
+    description: 'Velvet plum, royal burgundy, champagne gold ribbons & stardust',
+    primaryColor: '#E8C982',
+    accentColor: '#C72C55',
+    bgGradient: 'from-[#160D1F] via-[#4A1028] to-[#160D1F]',
+    cardBg: 'rgba(232, 201, 130, 0.08)',
+    textColor: '#FFF8F0',
+    headingFont: 'var(--font-cinzel)',
+    bodyFont: 'var(--font-outfit)',
+    boxStyle: 'luxury-plum-gold',
+    badge: 'Flagship Cinematic VIP'
+  },
   'romantic-rose': {
     id: 'romantic-rose',
-    name: 'Romantic Rose',
+    name: 'Romantic Rose & Ruby',
     description: 'Blush pinks, warm crimson glows & delicate starlight',
-    primaryColor: '#ec4899',
-    accentColor: '#f43f5e',
+    primaryColor: '#C72C55',
+    accentColor: '#F7DCE5',
     bgGradient: 'from-[#190614] via-[#2a0b22] to-[#0d020c]',
-    cardBg: 'rgba(255, 100, 160, 0.08)',
-    textColor: '#fdf2f8',
+    cardBg: 'rgba(199, 44, 85, 0.08)',
+    textColor: '#FFF8F0',
     headingFont: 'var(--font-playfair)',
     bodyFont: 'var(--font-outfit)',
     boxStyle: 'rose-blush',
@@ -124,6 +138,14 @@ export const GIFT_BOX_STYLES: Record<GiftBoxStyle, {
   bowColor: string;
   glowColor: string;
 }> = {
+  'luxury-plum-gold': {
+    name: 'Midnight Plum, Burgundy & Champagne Gold',
+    boxColor: 'linear-gradient(135deg, #4A1028 0%, #160D1F 100%)',
+    lidColor: 'linear-gradient(135deg, #6B163B 0%, #300A1B 100%)',
+    ribbonColor: 'linear-gradient(135deg, #FFF8F0 0%, #E8C982 50%, #C99E47 100%)',
+    bowColor: '#E8C982',
+    glowColor: 'rgba(232, 201, 130, 0.55)'
+  },
   'classic-gold-red': {
     name: 'Crimson Velvet & Royal Gold',
     boxColor: 'linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%)',
@@ -387,14 +409,14 @@ I am forever grateful to walk beside you in this journey.`,
   finalSurpriseMessage: 'Never forget how deeply you are loved, cherished, and celebrated today and every single day.',
   finalButtonText: 'Pop Massive Fireworks & Confetti! 🎆',
   theme: {
-    preset: 'romantic-rose',
-    fontPairing: 'elegant-serif',
-    giftBoxStyle: 'rose-blush',
-    primaryColor: '#ec4899',
-    accentColor: '#f43f5e',
-    bgColorStart: '#190614',
-    bgColorEnd: '#0d020c',
-    particleType: 'hearts',
+    preset: 'luxury-plum-gold',
+    fontPairing: 'luxury-display',
+    giftBoxStyle: 'luxury-plum-gold',
+    primaryColor: '#E8C982',
+    accentColor: '#C72C55',
+    bgColorStart: '#160D1F',
+    bgColorEnd: '#160D1F',
+    particleType: 'sparkles',
     particleDensity: 'high',
     enableSoundEffects: true,
     enableAmbientFloating: true

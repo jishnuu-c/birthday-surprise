@@ -1,4 +1,5 @@
 export type ThemePreset = 
+  | 'luxury-plum-gold'
   | 'romantic-rose'
   | 'luxury-gold'
   | 'dreamy-pastel'
@@ -15,6 +16,7 @@ export type FontPairing =
   | 'handwritten-warm';
 
 export type GiftBoxStyle = 
+  | 'luxury-plum-gold'
   | 'classic-gold-red'
   | 'rose-blush'
   | 'royal-midnight'

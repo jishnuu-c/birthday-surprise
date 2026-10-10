@@ -59,18 +59,18 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = ({
   const hasCustom = Boolean(customAudioUrl && customAudioUrl.trim() !== '');
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end">
       {/* Expanded Track Selection Panel */}
       {isExpanded && (
-        <div className="mb-3 w-72 sm:w-80 rounded-2xl p-4 glass-panel-dark border border-white/10 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-pink-300">
-              <Radio className="w-3.5 h-3.5 animate-pulse" />
+        <div className="mb-3 w-[calc(100vw-32px)] max-w-xs sm:w-80 rounded-2xl p-4 glass-luxury border border-[#E8C982]/30 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#E8C982]/20">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#E8C982]">
+              <Radio className="w-3.5 h-3.5 animate-pulse text-[#E8C982]" />
               <span>Surprise Music Player</span>
             </div>
             <button
               onClick={() => setIsExpanded(false)}
-              className="text-slate-400 hover:text-white text-xs px-2 py-0.5 rounded cursor-pointer"
+              className="text-[#F7DCE5]/70 hover:text-white text-xs px-2 py-0.5 rounded cursor-pointer"
             >
               ✕
             </button>
@@ -82,27 +82,27 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = ({
                 onClick={handlePlayCustom}
                 className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
                   audioState.customUrl === customAudioUrl && isPlaying
-                    ? 'bg-pink-500/20 border border-pink-500 text-white font-medium shadow-md'
-                    : 'bg-purple-500/15 border border-purple-500/30 text-purple-200 hover:bg-purple-500/25'
+                    ? 'bg-[#C72C55]/30 border border-[#E8C982] text-[#FFF8F0] font-medium shadow-md'
+                    : 'bg-[#4A1028]/40 border border-[#C72C55]/30 text-[#F7DCE5] hover:bg-[#4A1028]/70'
                 }`}
               >
                 <div className="truncate pr-2">
                   <div className="font-bold text-white flex items-center gap-1.5">
                     <span>🎵 Personal Custom Track</span>
                   </div>
-                  <div className="text-[10px] text-purple-300/80">Uploaded audio file</div>
+                  <div className="text-[10px] text-[#E8C982]">Uploaded audio file</div>
                 </div>
                 {audioState.customUrl === customAudioUrl && isPlaying && (
                   <span className="flex gap-0.5 items-end h-3">
-                    <span className="w-0.5 h-full bg-pink-400 animate-bounce" />
-                    <span className="w-0.5 h-2/3 bg-pink-400 animate-bounce delay-75" />
-                    <span className="w-0.5 h-4/5 bg-pink-400 animate-bounce delay-150" />
+                    <span className="w-0.5 h-full bg-[#E8C982] animate-bounce" />
+                    <span className="w-0.5 h-2/3 bg-[#E8C982] animate-bounce delay-75" />
+                    <span className="w-0.5 h-4/5 bg-[#E8C982] animate-bounce delay-150" />
                   </span>
                 )}
               </button>
             )}
 
-            <div className="text-[10px] uppercase font-bold text-slate-400 px-1 pt-1">
+            <div className="text-[10px] uppercase font-bold text-[#E8C982]/80 px-1 pt-1">
               Built-in Instrumentals
             </div>
 
@@ -114,19 +114,19 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = ({
                   onClick={() => handleSelectTrack(t.id)}
                   className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
                     isCurrent
-                      ? 'bg-pink-500/20 border border-pink-500/40 text-white font-medium'
-                      : 'hover:bg-white/5 text-slate-300'
+                      ? 'bg-[#E8C982]/20 border border-[#E8C982]/60 text-white font-medium'
+                      : 'hover:bg-white/5 text-[#FFF8F0]/80'
                   }`}
                 >
                   <div className="truncate pr-2">
-                    <div className="font-semibold text-slate-100 truncate">{t.title}</div>
-                    <div className="text-[10px] text-slate-400">{t.artist} · {t.category}</div>
+                    <div className="font-semibold text-[#FFF8F0] truncate">{t.title}</div>
+                    <div className="text-[10px] text-[#F7DCE5]/60">{t.artist} · {t.category}</div>
                   </div>
                   {isCurrent && (
                     <span className="flex gap-0.5 items-end h-3">
-                      <span className="w-0.5 h-full bg-pink-400 animate-bounce" />
-                      <span className="w-0.5 h-2/3 bg-pink-400 animate-bounce delay-75" />
-                      <span className="w-0.5 h-4/5 bg-pink-400 animate-bounce delay-150" />
+                      <span className="w-0.5 h-full bg-[#E8C982] animate-bounce" />
+                      <span className="w-0.5 h-2/3 bg-[#E8C982] animate-bounce delay-75" />
+                      <span className="w-0.5 h-4/5 bg-[#E8C982] animate-bounce delay-150" />
                     </span>
                   )}
                 </button>
@@ -144,22 +144,22 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = ({
       )}
 
       {/* Floating Pill Button */}
-      <div className="flex items-center gap-2 bg-slate-900/95 border border-white/15 hover:border-pink-500/40 p-2 pr-3 rounded-full shadow-2xl backdrop-blur-md transition-all duration-300 hover:shadow-pink-500/20">
+      <div className="flex items-center gap-2 bg-[#160D1F]/90 border border-[#E8C982]/30 hover:border-[#E8C982] p-2 pr-3 rounded-full shadow-2xl backdrop-blur-md transition-all duration-300 hover:shadow-[#E8C982]/20">
         <button
           onClick={handleTogglePlay}
           aria-label={isPlaying ? 'Pause music' : 'Play music'}
-          className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-lg transition-transform active:scale-95 relative group overflow-hidden cursor-pointer"
-          style={{ background: `linear-gradient(135deg, ${accentColor}, #f43f5e)` }}
+          className="w-10 h-10 rounded-full flex items-center justify-center text-[#160D1F] shadow-lg transition-transform active:scale-95 relative group overflow-hidden cursor-pointer"
+          style={{ background: 'linear-gradient(135deg, #FFF8F0 0%, #E8C982 50%, #C99E47 100%)' }}
         >
           {isPlaying ? (
-            <Pause className="w-4 h-4 fill-current" />
+            <Pause className="w-4 h-4 fill-current text-[#160D1F]" />
           ) : (
-            <Play className="w-4 h-4 fill-current ml-0.5" />
+            <Play className="w-4 h-4 fill-current ml-0.5 text-[#160D1F]" />
           )}
 
           {/* Equalizer animation ring */}
           {isPlaying && (
-            <span className="absolute inset-0 rounded-full border-2 border-white/40 animate-ping opacity-30" />
+            <span className="absolute inset-0 rounded-full border-2 border-[#E8C982] animate-ping opacity-30" />
           )}
         </button>
 
@@ -168,12 +168,12 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = ({
           className="text-left flex flex-col justify-center px-1 max-w-[120px] sm:max-w-[170px] cursor-pointer"
         >
           <div className="flex items-center gap-1.5">
-            <Music className={`w-3 h-3 shrink-0 ${isPlaying ? 'text-pink-400 animate-spin' : 'text-slate-400'}`} style={{ animationDuration: '4s' }} />
-            <span className="text-[11px] font-semibold text-slate-200 truncate">
+            <Music className={`w-3 h-3 shrink-0 ${isPlaying ? 'text-[#E8C982] animate-spin' : 'text-[#F7DCE5]/60'}`} style={{ animationDuration: '4s' }} />
+            <span className="text-[11px] font-semibold text-[#FFF8F0] truncate">
               {hasCustom ? 'Personal Birthday Song' : activeTrackObj.title}
             </span>
           </div>
-          <span className="text-[9px] text-slate-400 flex items-center gap-1">
+          <span className="text-[9px] text-[#E8C982]/80 flex items-center gap-1">
             {isPlaying ? (isMuted ? 'Muted' : 'Playing music') : 'Tap to play music'}
             <ChevronUp className={`w-2.5 h-2.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
           </span>
@@ -183,9 +183,9 @@ export const FloatingMusicPlayer: React.FC<FloatingMusicPlayerProps> = ({
           onClick={handleToggleMute}
           title={isMuted ? 'Unmute sound' : 'Mute sound'}
           aria-label={isMuted ? 'Unmute sound' : 'Mute sound'}
-          className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          className="p-1.5 rounded-full text-[#F7DCE5]/70 hover:text-[#FFF8F0] hover:bg-white/10 transition-colors cursor-pointer"
         >
-          {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-slate-300" />}
+          {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-[#E8C982]" />}
         </button>
       </div>
     </div>

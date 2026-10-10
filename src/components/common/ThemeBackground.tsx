@@ -8,7 +8,7 @@ interface ThemeBackgroundProps {
 
 export const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const currentPreset = THEME_PRESETS[theme.preset] || THEME_PRESETS['romantic-rose'];
+  const currentPreset = THEME_PRESETS[theme.preset] || THEME_PRESETS['luxury-plum-gold'];
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -20,6 +20,8 @@ export const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme }) => {
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
     const handleResize = () => {
       if (!canvas) return;
       width = canvas.width = window.innerWidth;
@@ -29,8 +31,8 @@ export const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme }) => {
     window.addEventListener('resize', handleResize);
 
     // Particle system
-    const densityMap = { low: 25, medium: 50, high: 90 };
-    const count = densityMap[theme.particleDensity] || 50;
+    const densityMap = { low: 20, medium: 40, high: 75 };
+    const count = prefersReducedMotion ? 15 : (densityMap[theme.particleDensity] || 40);
 
     interface Particle {
       x: number;
@@ -43,31 +45,33 @@ export const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme }) => {
       rotation: number;
       rotationSpeed: number;
       color: string;
-      type: 'heart' | 'star' | 'sparkle' | 'circle';
+      type: 'heart' | 'star' | 'sparkle' | 'bokeh';
     }
 
-    const colors = [
+    const paletteColors = [
       theme.primaryColor || currentPreset.primaryColor,
       theme.accentColor || currentPreset.accentColor,
-      '#ffffff',
-      '#fbbf24',
-      '#f472b6'
+      '#E8C982', // Champagne Gold
+      '#FFF8F0', // Warm Ivory
+      '#F7DCE5', // Soft Blush
+      '#C72C55'  // Ruby Rose
     ];
 
     const particles: Particle[] = [];
     for (let i = 0; i < count; i++) {
+      const isBokeh = i % 5 === 0;
       particles.push({
         x: Math.random() * width,
         y: Math.random() * height,
-        size: Math.random() * 8 + 4,
-        speedX: (Math.random() - 0.5) * 0.6,
-        speedY: -(Math.random() * 0.8 + 0.3), // Float upwards
-        opacity: Math.random() * 0.7 + 0.2,
-        fadeSpeed: (Math.random() - 0.5) * 0.008,
+        size: isBokeh ? Math.random() * 14 + 10 : Math.random() * 6 + 3,
+        speedX: (Math.random() - 0.5) * (prefersReducedMotion ? 0.1 : 0.4),
+        speedY: -(Math.random() * (prefersReducedMotion ? 0.2 : 0.5) + 0.15), // Float upwards gently
+        opacity: isBokeh ? Math.random() * 0.25 + 0.08 : Math.random() * 0.65 + 0.25,
+        fadeSpeed: (Math.random() - 0.5) * 0.006,
         rotation: Math.random() * Math.PI * 2,
-        rotationSpeed: (Math.random() - 0.5) * 0.02,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        type: theme.particleType === 'hearts' ? 'heart' : theme.particleType === 'stars' ? 'star' : 'sparkle'
+        rotationSpeed: (Math.random() - 0.5) * (prefersReducedMotion ? 0.005 : 0.015),
+        color: paletteColors[Math.floor(Math.random() * paletteColors.length)],
+        type: isBokeh ? 'bokeh' : theme.particleType === 'hearts' ? 'heart' : theme.particleType === 'stars' ? 'star' : 'sparkle'
       });
     }
 
@@ -76,13 +80,9 @@ export const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme }) => {
       ctx.beginPath();
       const topCurveHeight = size * 0.3;
       ctx.moveTo(x, y + topCurveHeight);
-      // top left curve
       ctx.bezierCurveTo(x, y, x - size / 2, y, x - size / 2, y + topCurveHeight);
-      // bottom left curve
       ctx.bezierCurveTo(x - size / 2, y + (size + topCurveHeight) / 2, x, y + size, x, y + size);
-      // bottom right curve
       ctx.bezierCurveTo(x, y + size, x + size / 2, y + (size + topCurveHeight) / 2, x + size / 2, y + topCurveHeight);
-      // top right curve
       ctx.bezierCurveTo(x + size / 2, y, x, y, x, y + topCurveHeight);
       ctx.closePath();
       ctx.fill();
@@ -114,11 +114,17 @@ export const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme }) => {
 
     const drawSparkle = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number) => {
       ctx.beginPath();
-      ctx.arc(x, y, size * 0.4, 0, Math.PI * 2);
+      ctx.arc(x, y, size * 0.35, 0, Math.PI * 2);
       ctx.fill();
-      // Glow rays
-      ctx.fillRect(x - size, y - 0.8, size * 2, 1.6);
-      ctx.fillRect(x - 0.8, y - size, 1.6, size * 2);
+      // Glow cross rays
+      ctx.fillRect(x - size * 1.2, y - 0.6, size * 2.4, 1.2);
+      ctx.fillRect(x - 0.6, y - size * 1.2, 1.2, size * 2.4);
+    };
+
+    const drawBokeh = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number) => {
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fill();
     };
 
     const render = () => {
@@ -130,17 +136,17 @@ export const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme }) => {
         p.rotation += p.rotationSpeed;
         p.opacity += p.fadeSpeed;
 
-        if (p.opacity > 0.85 || p.opacity < 0.15) {
+        if (p.opacity > 0.85 || p.opacity < 0.12) {
           p.fadeSpeed = -p.fadeSpeed;
         }
 
         // Wrap around edges
-        if (p.y < -20) {
-          p.y = height + 20;
+        if (p.y < -30) {
+          p.y = height + 30;
           p.x = Math.random() * width;
         }
-        if (p.x < -20) p.x = width + 20;
-        if (p.x > width + 20) p.x = -20;
+        if (p.x < -30) p.x = width + 30;
+        if (p.x > width + 30) p.x = -30;
 
         ctx.save();
         ctx.translate(p.x, p.y);
@@ -151,7 +157,9 @@ export const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme }) => {
         if (p.type === 'heart') {
           drawHeart(ctx, -p.size / 2, -p.size / 2, p.size);
         } else if (p.type === 'star') {
-          drawStar(ctx, 0, 0, 5, p.size, p.size * 0.5);
+          drawStar(ctx, 0, 0, 5, p.size, p.size * 0.45);
+        } else if (p.type === 'bokeh') {
+          drawBokeh(ctx, 0, 0, p.size);
         } else {
           drawSparkle(ctx, 0, 0, p.size);
         }
@@ -179,7 +187,7 @@ export const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme }) => {
 
       {/* Radial Soft Light Orbs */}
       <div 
-        className="absolute -top-40 left-1/4 w-[600px] h-[600px] rounded-full blur-[140px] opacity-30 animate-pulse-glow"
+        className="absolute -top-40 left-1/4 w-[600px] h-[600px] rounded-full blur-[140px] opacity-25 animate-pulse-glow"
         style={{ background: `radial-gradient(circle, ${theme.primaryColor || currentPreset.primaryColor} 0%, transparent 70%)` }}
       />
       <div 
@@ -190,7 +198,7 @@ export const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme }) => {
         }}
       />
       <div 
-        className="absolute -bottom-20 left-1/3 w-[700px] h-[700px] rounded-full blur-[180px] opacity-25"
+        className="absolute -bottom-20 left-1/3 w-[700px] h-[700px] rounded-full blur-[180px] opacity-20"
         style={{ background: `radial-gradient(circle, ${theme.primaryColor || currentPreset.primaryColor} 0%, transparent 70%)` }}
       />
 

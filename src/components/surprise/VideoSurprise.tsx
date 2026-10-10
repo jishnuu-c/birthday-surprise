@@ -50,14 +50,14 @@ export const VideoSurprise: React.FC<VideoSurpriseProps> = ({ config }) => {
     <section className="py-20 px-4 max-w-4xl mx-auto relative z-10">
       {/* Header */}
       <div className="text-center max-w-2xl mx-auto mb-10">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-semibold uppercase tracking-wider mb-4">
-          <Film className="w-3.5 h-3.5" />
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-luxury border border-[#E8C982]/30 text-[#E8C982] text-xs font-semibold uppercase tracking-wider mb-4">
+          <Film className="w-3.5 h-3.5 text-[#E8C982]" />
           <span>Cinematic Moments</span>
         </div>
-        <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-100 font-elegant">
+        <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-[#FFF8F0] font-elegant">
           {config.videoTitle || 'A Special Message Just for You'}
         </h2>
-        <p className="mt-3 text-slate-400 text-sm sm:text-base leading-relaxed">
+        <p className="mt-3 text-[#F7DCE5]/80 text-sm sm:text-base leading-relaxed">
           {config.videoDescription || 'Turn up your sound and press play to experience a personal birthday montage.'}
         </p>
       </div>

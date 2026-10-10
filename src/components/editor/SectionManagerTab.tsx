@@ -1,13 +1,20 @@
 import React, { useState } from 'react';
 import { BirthdayPageConfig, SectionsConfig, SpecialReason, TimelineMemory } from '../../types';
-import { CheckSquare, Square, Layers, Plus, Trash2, Cake, Ticket, Heart, Clock } from 'lucide-react';
+import { CheckSquare, Square, Layers, Plus, Trash2, Cake, Ticket, Heart, Clock, Save, RefreshCw, CheckCircle2, Sparkles } from 'lucide-react';
 
 interface SectionManagerTabProps {
   config: BirthdayPageConfig;
   onChange: (updated: Partial<BirthdayPageConfig>) => void;
+  onSave?: () => void;
+  saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 }
 
-export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, onChange }) => {
+export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ 
+  config, 
+  onChange,
+  onSave,
+  saveStatus = 'idle'
+}) => {
   const sections = config.sections;
   const [activeSubTab, setActiveSubTab] = useState<'toggles' | 'timeline' | 'reasons' | 'cake' | 'scratch' | 'finale'>('toggles');
 
@@ -82,64 +89,64 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
   return (
     <div className="space-y-6">
       {/* Sub tabs navigation */}
-      <div className="flex flex-wrap gap-2 pb-2 border-b border-white/10">
+      <div className="flex items-center gap-1.5 pb-2 border-b border-white/10 overflow-x-auto no-scrollbar scroll-smooth">
         <button
           onClick={() => setActiveSubTab('toggles')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-            activeSubTab === 'toggles' ? 'bg-pink-500 text-white shadow-md' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+          className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer touch-target ${
+            activeSubTab === 'toggles' ? 'bg-pink-500 text-white shadow-md font-bold' : 'bg-white/5 text-slate-300 hover:bg-white/10'
           }`}
         >
-          <Layers className="w-3.5 h-3.5" />
-          <span>Enable / Disable Sections</span>
+          <Layers className="w-3.5 h-3.5 shrink-0" />
+          <span className="whitespace-nowrap">Enable / Disable</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('timeline')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-            activeSubTab === 'timeline' ? 'bg-pink-500 text-white shadow-md' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+          className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer touch-target ${
+            activeSubTab === 'timeline' ? 'bg-pink-500 text-white shadow-md font-bold' : 'bg-white/5 text-slate-300 hover:bg-white/10'
           }`}
         >
-          <Clock className="w-3.5 h-3.5" />
-          <span>Timeline Stories ({config.timelineMemories?.length || 0})</span>
+          <Clock className="w-3.5 h-3.5 shrink-0" />
+          <span className="whitespace-nowrap">Timeline ({config.timelineMemories?.length || 0})</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('reasons')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-            activeSubTab === 'reasons' ? 'bg-pink-500 text-white shadow-md' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+          className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer touch-target ${
+            activeSubTab === 'reasons' ? 'bg-pink-500 text-white shadow-md font-bold' : 'bg-white/5 text-slate-300 hover:bg-white/10'
           }`}
         >
-          <Heart className="w-3.5 h-3.5" />
-          <span>Reasons Cards ({config.reasonsList?.length || 0})</span>
+          <Heart className="w-3.5 h-3.5 shrink-0" />
+          <span className="whitespace-nowrap">Reasons ({config.reasonsList?.length || 0})</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('cake')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-            activeSubTab === 'cake' ? 'bg-pink-500 text-white shadow-md' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+          className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer touch-target ${
+            activeSubTab === 'cake' ? 'bg-pink-500 text-white shadow-md font-bold' : 'bg-white/5 text-slate-300 hover:bg-white/10'
           }`}
         >
-          <Cake className="w-3.5 h-3.5" />
-          <span>Cake & Wish</span>
+          <Cake className="w-3.5 h-3.5 shrink-0" />
+          <span className="whitespace-nowrap">Cake & Wish</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('scratch')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-            activeSubTab === 'scratch' ? 'bg-pink-500 text-white shadow-md' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+          className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer touch-target ${
+            activeSubTab === 'scratch' ? 'bg-pink-500 text-white shadow-md font-bold' : 'bg-white/5 text-slate-300 hover:bg-white/10'
           }`}
         >
-          <Ticket className="w-3.5 h-3.5" />
-          <span>Scratch Card</span>
+          <Ticket className="w-3.5 h-3.5 shrink-0" />
+          <span className="whitespace-nowrap">Scratch Card</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('finale')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-            activeSubTab === 'finale' ? 'bg-pink-500 text-white shadow-md' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+          className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer touch-target ${
+            activeSubTab === 'finale' ? 'bg-pink-500 text-white shadow-md font-bold' : 'bg-white/5 text-slate-300 hover:bg-white/10'
           }`}
         >
-          <span>🎆 Final Finale</span>
+          <span className="whitespace-nowrap">🎆 Final Finale</span>
         </button>
       </div>
 
@@ -510,6 +517,35 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
           </div>
         </div>
       )}
+
+      {/* Explicit Save Action Footer for Sections Tab */}
+      {onSave && (
+        <div className="sticky bottom-4 z-20 p-4 rounded-2xl bg-slate-900/95 border border-pink-500/30 shadow-2xl backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-slate-300">
+            <Sparkles className="w-4 h-4 text-[#E8C982] shrink-0" />
+            <span>Ready to save sections, timeline & interactive features?</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saveStatus === 'saving'}
+            className="w-full sm:w-auto px-6 py-2.5 rounded-full font-bold text-xs sm:text-sm bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-lg shadow-pink-500/25 flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+          >
+            {saveStatus === 'saving' ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : saveStatus === 'saved' ? (
+              <CheckCircle2 className="w-4 h-4" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span>
+              {saveStatus === 'saving' ? 'Saving Sections...' : saveStatus === 'saved' ? 'Sections Saved!' : 'Save Sections Changes'}
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
+

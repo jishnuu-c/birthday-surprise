@@ -43,14 +43,14 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({ config }) => {
     <section className="py-20 px-4 max-w-6xl mx-auto relative z-10">
       {/* Section Header */}
       <div className="text-center max-w-2xl mx-auto mb-14">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-pink-500/10 border border-pink-500/20 text-pink-300 text-xs font-semibold uppercase tracking-wider mb-4">
-          <Camera className="w-3.5 h-3.5" />
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-luxury border border-[#E8C982]/30 text-[#E8C982] text-xs font-semibold uppercase tracking-wider mb-4">
+          <Camera className="w-3.5 h-3.5 text-[#E8C982]" />
           <span>Treasured Moments</span>
         </div>
-        <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-slate-100 font-elegant">
+        <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-[#FFF8F0] font-elegant">
           {config.galleryHeading || 'Our Beautiful Memories'}
         </h2>
-        <p className="mt-3 text-slate-400 text-sm sm:text-base leading-relaxed">
+        <p className="mt-3 text-[#F7DCE5]/80 text-sm sm:text-base leading-relaxed">
           {config.gallerySubtitle || 'Every photograph holds a million smiles, endless adventures, and unforgettable laughter.'}
         </p>
       </div>
@@ -65,7 +65,7 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({ config }) => {
             viewport={{ once: true, margin: '-50px' }}
             transition={{ delay: index * 0.1, duration: 0.6 }}
             onClick={() => setSelectedIndex(index)}
-            className="group relative rounded-2xl overflow-hidden glass-panel border border-white/15 cursor-pointer shadow-xl transition-all duration-500 hover:scale-[1.02] hover:border-pink-500/40 hover:shadow-2xl hover:shadow-pink-500/10"
+            className="group relative rounded-2xl overflow-hidden glass-panel border border-[#E8C982]/20 cursor-pointer shadow-xl transition-all duration-500 hover:scale-[1.02] hover:border-[#E8C982]/60 hover:shadow-2xl hover:shadow-[#E8C982]/10"
           >
             {/* Image Container */}
             <div className="aspect-[4/3] sm:aspect-[3/4] overflow-hidden relative">

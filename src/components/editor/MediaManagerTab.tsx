@@ -3,19 +3,26 @@ import { BirthdayPageConfig, GalleryPhoto } from '../../types';
 import { BUILT_IN_AUDIO_TRACKS } from '../../constants/presets';
 import { compressImageFile } from '../../lib/storage';
 import { isSupabaseConfigured, uploadRemoteMedia } from '../../lib/supabase';
-import { saveMediaBlob } from '../../lib/mediaDb';
+import { saveMediaBlob, getMediaRecord, deleteMediaBlob, getMediaBlobUrl } from '../../lib/mediaDb';
 import { 
   Upload, Trash2, ArrowUp, ArrowDown, Image as ImageIcon, Video, Music, 
   Sparkles, Mic, Plus, Play, Pause, Volume2, VolumeX, RotateCcw, 
-  Check, AlertCircle, FileAudio, FileVideo, Radio, RefreshCw, Eye, Film
+  Check, AlertCircle, FileAudio, FileVideo, Radio, RefreshCw, Eye, Film, Save, CheckCircle2
 } from 'lucide-react';
 
 interface MediaManagerTabProps {
   config: BirthdayPageConfig;
   onChange: (updated: Partial<BirthdayPageConfig>) => void;
+  onSave?: () => void;
+  saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 }
 
-export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChange }) => {
+export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ 
+  config, 
+  onChange,
+  onSave,
+  saveStatus = 'idle'
+}) => {
   // Loading & Progress states
   const [isCompressing, setIsCompressing] = useState(false);
   const [isAudioUploading, setIsAudioUploading] = useState(false);
@@ -31,8 +38,7 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
-  const [audioVolume, setAudioVolume] = useState(0.8);
-  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [audioVolume, setAudioVolume] = useState(0.85);
 
   // Video file metadata & local preview
   const [videoFileName, setVideoFileName] = useState<string>('Personal Video Message');
@@ -54,6 +60,42 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
 
+  // Restore audio & video metadata on mount or ID change
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadMediaMetadata() {
+      // Check for audio record in IndexedDB
+      const audioKey = `audio-${config.id}`;
+      const audioRec = await getMediaRecord(audioKey);
+      if (isMounted && audioRec) {
+        setAudioFileName(audioRec.name);
+        setAudioFileSize(formatBytes(audioRec.size));
+      }
+
+      // Check for video record in IndexedDB
+      const videoKey = `video-${config.id}`;
+      const videoRec = await getMediaRecord(videoKey);
+      if (isMounted && videoRec) {
+        setVideoFileName(videoRec.name);
+        setVideoFileSize(formatBytes(videoRec.size));
+      }
+
+      // Check for voice note record in IndexedDB
+      const voiceKey = `voice-${config.id}`;
+      const voiceRec = await getMediaRecord(voiceKey);
+      if (isMounted && voiceRec) {
+        setVoiceFileName(voiceRec.name);
+      }
+    }
+
+    loadMediaMetadata();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [config.id]);
+
   // Initialize preview audio element
   useEffect(() => {
     const audio = new Audio();
@@ -73,7 +115,7 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
     const handleError = () => {
       setIsAudioPlaying(false);
       if (config.customAudioUrl) {
-        setAudioError('Could not load audio. Check that the format is supported.');
+        console.warn('Audio preview loading error for:', config.customAudioUrl);
       }
     };
 
@@ -93,10 +135,38 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
 
   // Sync preview audio src with config
   useEffect(() => {
-    if (audioPreviewRef.current && config.customAudioUrl) {
-      audioPreviewRef.current.src = config.customAudioUrl;
-      audioPreviewRef.current.load();
+    let isMounted = true;
+
+    async function syncAudioSrc() {
+      if (!audioPreviewRef.current) return;
+
+      if (config.customAudioUrl && config.customAudioUrl.trim() !== '') {
+        let srcToPlay = config.customAudioUrl;
+        if (srcToPlay.startsWith('indexeddb:')) {
+          const key = srcToPlay.replace('indexeddb:', '');
+          const blobUrl = await getMediaBlobUrl(key);
+          if (blobUrl && isMounted) {
+            srcToPlay = blobUrl;
+          }
+        }
+        if (isMounted && audioPreviewRef.current) {
+          audioPreviewRef.current.src = srcToPlay;
+          audioPreviewRef.current.load();
+        }
+      } else {
+        if (audioPreviewRef.current) {
+          audioPreviewRef.current.pause();
+          audioPreviewRef.current.src = '';
+        }
+        setIsAudioPlaying(false);
+      }
     }
+
+    syncAudioSrc();
+
+    return () => {
+      isMounted = false;
+    };
   }, [config.customAudioUrl]);
 
   // Audio preview controls
@@ -272,9 +342,9 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
         }
       }
 
-      // Local persistence fallback using IndexedDB
-      setAudioUploadProgress('Saving to local storage engine...');
-      const mediaId = `audio-${config.id}-${Date.now()}`;
+      // Local persistence fallback using deterministic key: audio-${config.id}
+      setAudioUploadProgress('Saving to persistent audio engine...');
+      const mediaId = `audio-${config.id}`;
       const { blobUrl } = await saveMediaBlob(mediaId, file, file.name);
       
       onChange({ customAudioUrl: blobUrl });
@@ -287,15 +357,21 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
     }
   };
 
-  const handleRemoveAudio = () => {
+  const handleRemoveAudio = async () => {
     if (audioPreviewRef.current) {
       audioPreviewRef.current.pause();
+      audioPreviewRef.current.src = '';
     }
     setIsAudioPlaying(false);
     setAudioCurrentTime(0);
-    setAudioFileName('');
+    setAudioFileName('Custom Audio Track');
     setAudioFileSize('');
     setAudioError(null);
+    
+    // Delete from IndexedDB
+    const mediaId = `audio-${config.id}`;
+    await deleteMediaBlob(mediaId).catch(() => {});
+
     onChange({ customAudioUrl: '' });
   };
 
@@ -333,9 +409,9 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
         }
       }
 
-      // Local IndexedDB fallback
-      setVideoUploadProgress('Saving video to local browser storage...');
-      const mediaId = `video-${config.id}-${Date.now()}`;
+      // Local IndexedDB fallback with deterministic key: video-${config.id}
+      setVideoUploadProgress('Saving video to persistent storage...');
+      const mediaId = `video-${config.id}`;
       const { blobUrl } = await saveMediaBlob(mediaId, file, file.name);
       
       onChange({ videoUrl: blobUrl });
@@ -348,10 +424,15 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
     }
   };
 
-  const handleRemoveVideo = () => {
-    setVideoFileName('');
+  const handleRemoveVideo = async () => {
+    setVideoFileName('Personal Video Message');
     setVideoFileSize('');
     setVideoError(null);
+    
+    // Delete from IndexedDB
+    const mediaId = `video-${config.id}`;
+    await deleteMediaBlob(mediaId).catch(() => {});
+
     onChange({ videoUrl: '' });
   };
 
@@ -389,7 +470,7 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
           return;
         }
       }
-      const mediaId = `voice-${config.id}-${Date.now()}`;
+      const mediaId = `voice-${config.id}`;
       const { blobUrl } = await saveMediaBlob(mediaId, file, file.name);
       onChange({ voiceMessageUrl: blobUrl });
     } catch (err) {
@@ -399,6 +480,7 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
 
   const hasCustomAudio = Boolean(config.customAudioUrl && config.customAudioUrl.trim() !== '');
   const hasCustomVideo = Boolean(config.videoUrl && config.videoUrl.trim() !== '');
+
 
   return (
     <div className="space-y-6">
@@ -994,7 +1076,36 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ config, onChan
           />
         </div>
       </div>
+
+      {/* Explicit Save Action Footer for Media Tab */}
+      {onSave && (
+        <div className="sticky bottom-4 z-20 p-4 rounded-2xl bg-slate-900/95 border border-pink-500/30 shadow-2xl backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-slate-300">
+            <Sparkles className="w-4 h-4 text-[#E8C982] shrink-0" />
+            <span>Ready to save your media & audio selections?</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saveStatus === 'saving'}
+            className="w-full sm:w-auto px-6 py-2.5 rounded-full font-bold text-xs sm:text-sm bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-lg shadow-pink-500/25 flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+          >
+            {saveStatus === 'saving' ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : saveStatus === 'saved' ? (
+              <CheckCircle2 className="w-4 h-4" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span>
+              {saveStatus === 'saving' ? 'Saving Media...' : saveStatus === 'saved' ? 'Media Saved!' : 'Save Media Changes'}
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
+
 

@@ -124,14 +124,15 @@ export const PublicSurprisePage: React.FC = () => {
       />
 
       {/* Subtle Bottom Floating Creator Watermark */}
-      <div className="fixed bottom-3 left-4 z-40">
+      <div className="fixed bottom-3 left-3 sm:left-4 z-40">
         <Link
           to={`/editor/${config.id}`}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/15 text-[11px] font-medium text-slate-300 hover:text-white transition-all shadow-lg hover:scale-105"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 text-[10px] sm:text-[11px] font-medium text-slate-300 hover:text-white transition-all shadow-lg hover:scale-105"
         >
-          <Sparkles className="w-3 h-3 text-pink-400" />
-          <span>Customize or Make Your Own Surprise</span>
-          <Heart className="w-3 h-3 fill-pink-500 text-pink-500" />
+          <Sparkles className="w-3 h-3 text-[#E8C982]" />
+          <span className="hidden sm:inline">Customize or Make Your Own Surprise</span>
+          <span className="sm:hidden inline">Edit / Make Surprise</span>
+          <Heart className="w-3 h-3 fill-[#C72C55] text-[#C72C55]" />
         </Link>
       </div>
     </div>

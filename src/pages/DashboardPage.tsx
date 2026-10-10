@@ -61,30 +61,31 @@ export const DashboardPage: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       {/* Top Header */}
       <header className="bg-slate-900/80 border-b border-white/10 backdrop-blur-md sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-400 flex items-center justify-center text-white shadow-md">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
+          <Link to="/" className="flex items-center gap-2 sm:gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-400 flex items-center justify-center text-white shadow-md shrink-0">
               <Gift className="w-4 h-4" />
             </div>
-            <span className="font-extrabold text-white text-base">Birthday Magic Studio</span>
+            <span className="font-extrabold text-white text-sm sm:text-base truncate">Birthday Magic Studio</span>
           </Link>
 
           <button
             onClick={() => setShowNewModal(true)}
-            className="px-4 py-2 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-pink-500/20 active:scale-95 transition-all cursor-pointer"
+            className="px-3.5 sm:px-4 py-2 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-pink-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
           >
-            <Plus className="w-4 h-4" />
-            <span>Create New Birthday Surprise</span>
+            <Plus className="w-4 h-4 shrink-0" />
+            <span className="hidden xs:inline">Create New Surprise</span>
+            <span className="xs:hidden inline">New</span>
           </button>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-10">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-6 sm:py-10">
         {/* Title & Search Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white font-elegant">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-white font-elegant">
               Your Birthday Surprise Pages
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
@@ -105,20 +106,20 @@ export const DashboardPage: React.FC = () => {
         </div>
 
         {/* Pages Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {filteredPages.map((page) => {
             const publicUrl = `${window.location.origin}/b/${page.slug || page.id}`;
 
             return (
               <div
                 key={page.id}
-                className="rounded-3xl glass-panel border border-white/10 hover:border-pink-500/40 p-5 shadow-xl transition-all duration-300 flex flex-col justify-between group"
+                className="rounded-3xl glass-panel border border-white/10 hover:border-pink-500/40 p-4 sm:p-5 shadow-xl transition-all duration-300 flex flex-col justify-between group"
               >
                 <div>
                   {/* Top Header Card */}
                   <div className="flex items-start justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl overflow-hidden bg-slate-900 border border-white/20 shrink-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-11 sm:w-12 h-11 sm:h-12 rounded-2xl overflow-hidden bg-slate-900 border border-white/20 shrink-0">
                         {page.profilePhotoUrl ? (
                           <img
                             src={page.profilePhotoUrl}
@@ -131,16 +132,16 @@ export const DashboardPage: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      <div>
-                        <h3 className="font-bold text-base text-slate-100 group-hover:text-pink-300 transition-colors">
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-sm sm:text-base text-slate-100 group-hover:text-pink-300 transition-colors truncate">
                           {page.recipientName}
                         </h3>
-                        <p className="text-xs text-slate-400 font-mono">/b/{page.slug || page.id}</p>
+                        <p className="text-xs text-slate-400 font-mono truncate">/b/{page.slug || page.id}</p>
                       </div>
                     </div>
 
                     <span
-                      className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${
+                      className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full shrink-0 ${
                         page.isPublished
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                           : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
@@ -165,11 +166,11 @@ export const DashboardPage: React.FC = () => {
                 </div>
 
                 {/* Card Action Buttons */}
-                <div className="pt-4 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
+                <div className="pt-4 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <Link
                       to={`/editor/${page.id}`}
-                      className="px-3.5 py-1.5 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-xs font-semibold flex items-center gap-1.5 shadow transition-colors"
+                      className="px-3.5 py-2 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-xs font-semibold flex items-center gap-1.5 shadow transition-colors touch-target"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                       <span>Edit</span>
@@ -179,40 +180,40 @@ export const DashboardPage: React.FC = () => {
                       href={publicUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+                      className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors touch-target flex items-center justify-center"
                       title="Preview Page"
                     >
-                      <Eye className="w-3.5 h-3.5" />
+                      <Eye className="w-4 h-4" />
                     </a>
 
                     <button
                       onClick={() => handleCopyLink(page.slug || page.id)}
-                      className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                      className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer touch-target flex items-center justify-center"
                       title="Copy Public Link"
                     >
                       {copiedId === (page.slug || page.id) ? (
-                        <Check className="w-3.5 h-3.5 text-green-400" />
+                        <Check className="w-4 h-4 text-green-400" />
                       ) : (
-                        <Copy className="w-3.5 h-3.5" />
+                        <Copy className="w-4 h-4" />
                       )}
                     </button>
 
                     <button
                       onClick={() => handleClone(page)}
-                      className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                      className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer touch-target flex items-center justify-center"
                       title="Duplicate Page"
                     >
-                      <CopyPlus className="w-3.5 h-3.5" />
+                      <CopyPlus className="w-4 h-4" />
                     </button>
                   </div>
 
                   {pages.length > 1 && (
                     <button
                       onClick={() => handleDelete(page.id, page.recipientName)}
-                      className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors cursor-pointer"
+                      className="p-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors cursor-pointer touch-target flex items-center justify-center"
                       title="Delete Page"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   )}
                 </div>
@@ -224,10 +225,10 @@ export const DashboardPage: React.FC = () => {
 
       {/* Create New Birthday Modal */}
       {showNewModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <form
             onSubmit={handleCreateNew}
-            className="w-full max-w-md bg-slate-900 border border-white/20 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200"
+            className="w-full max-w-md max-h-[92vh] overflow-y-auto bg-slate-900 border border-white/20 rounded-3xl p-5 sm:p-8 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200"
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-pink-500/20 border border-pink-500/40 flex items-center justify-center text-pink-400">

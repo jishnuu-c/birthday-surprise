@@ -51,14 +51,14 @@ export const PersonalLetter: React.FC<PersonalLetterProps> = ({ config }) => {
     <section className="py-20 px-4 max-w-3xl mx-auto relative z-10">
       {/* Section Header */}
       <div className="text-center max-w-xl mx-auto mb-12">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-semibold uppercase tracking-wider mb-4">
-          <Mail className="w-3.5 h-3.5" />
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-luxury border border-[#E8C982]/30 text-[#E8C982] text-xs font-semibold uppercase tracking-wider mb-4">
+          <Mail className="w-3.5 h-3.5 text-[#E8C982]" />
           <span>From The Heart</span>
         </div>
-        <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-slate-100 font-elegant">
+        <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-[#FFF8F0] font-elegant">
           {config.letterHeading || 'A Personal Letter for You'}
         </h2>
-        <p className="mt-3 text-slate-400 text-sm sm:text-base">
+        <p className="mt-3 text-[#F7DCE5]/80 text-sm sm:text-base">
           Written with love, sincerity, and warm birthday wishes.
         </p>
       </div>
@@ -73,24 +73,24 @@ export const PersonalLetter: React.FC<PersonalLetterProps> = ({ config }) => {
             viewport={{ once: true }}
             whileHover={{ scale: 1.03 }}
             onClick={handleOpenEnvelope}
-            className="cursor-pointer relative w-full max-w-md aspect-[1.5/1] rounded-2xl p-8 bg-gradient-to-br from-rose-900/90 via-pink-950/80 to-slate-900 border-2 border-rose-500/30 shadow-2xl flex flex-col items-center justify-center text-center group"
+            className="cursor-pointer relative w-full max-w-md aspect-[1.5/1] rounded-2xl p-8 bg-gradient-to-br from-[#4A1028] via-[#300A1B] to-[#160D1F] border-2 border-[#E8C982]/40 shadow-2xl flex flex-col items-center justify-center text-center group"
           >
             {/* Envelope Flap Lines */}
             <div className="absolute inset-0 rounded-2xl border border-white/10 pointer-events-none" />
 
             {/* Glowing Wax Seal */}
             <div className="relative mb-4">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-red-600 to-rose-400 shadow-xl shadow-red-600/40 border-2 border-amber-300 flex items-center justify-center transform group-hover:rotate-12 transition-transform duration-300">
-                <Heart className="w-8 h-8 fill-amber-100 text-amber-100" />
+              <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-[#C72C55] to-[#4A1028] shadow-xl shadow-[#C72C55]/40 border-2 border-[#E8C982] flex items-center justify-center transform group-hover:rotate-12 transition-transform duration-300">
+                <Heart className="w-8 h-8 fill-[#E8C982] text-[#E8C982]" />
               </div>
-              <div className="absolute -inset-2 rounded-full blur-md bg-rose-500/30 animate-pulse pointer-events-none" />
+              <div className="absolute -inset-2 rounded-full blur-md bg-[#E8C982]/30 animate-pulse pointer-events-none" />
             </div>
 
-            <p className="text-base font-semibold text-rose-200 tracking-wide font-elegant">
+            <p className="text-base font-semibold text-[#FFF8F0] tracking-wide font-elegant">
               To: {config.recipientName || 'Someone Dear'}
             </p>
-            <p className="text-xs text-rose-300/80 mt-1 flex items-center gap-1.5">
-              <Sparkles className="w-3 h-3 text-amber-300" />
+            <p className="text-xs text-[#E8C982] mt-1 flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-[#E8C982]" />
               <span>Tap Wax Seal to Open Letter</span>
             </p>
           </motion.div>
