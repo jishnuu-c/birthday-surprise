@@ -94,6 +94,17 @@ class BirthdayAudioEngine {
     }
   }
 
+  public unlockAudio() {
+    try {
+      const ctx = this.initContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   public async play(trackId: string = 'synth-happy-birthday-warm', customUrl?: string) {
     const ctx = this.initContext();
     if (ctx && ctx.state === 'suspended') {
@@ -117,9 +128,9 @@ class BirthdayAudioEngine {
         if (resolvedBlobUrl) {
           this.setupHtmlAudio(resolvedBlobUrl);
         } else {
-          // Fall back to synth if blob not found
-          this.isPlaying = true;
-          this.startSynthMelody(trackId);
+          // If blob not found, set error and DO NOT silently replace with default song!
+          this.lastError = 'Saved audio file is unavailable on this device. Please select or upload an MP3.';
+          this.isPlaying = false;
           this.notify();
         }
         return;
@@ -169,10 +180,8 @@ class BirthdayAudioEngine {
 
       this.htmlAudio.addEventListener('error', (e) => {
         console.warn('HTML Audio error event:', e);
-        this.lastError = 'Could not load audio file. Falling back to built-in birthday melody.';
-        // Fall back to built-in synth so user always hears music
-        this.isPlaying = true;
-        this.startSynthMelody(this.currentTrackId);
+        this.lastError = 'Could not play selected audio file. Please check format or tap Play.';
+        this.isPlaying = false;
         this.notify();
       });
     }
@@ -195,12 +204,11 @@ class BirthdayAudioEngine {
         })
         .catch((err) => {
           console.warn('Audio play rejection:', err);
+          this.isPlaying = false;
           if (err.name === 'NotAllowedError') {
-            this.lastError = 'Tap Play to start birthday music!';
+            this.lastError = 'Tap Play button to start birthday music (mobile autoplay policy)';
           } else {
-            // If failed to decode custom audio, play built-in synth
-            this.isPlaying = true;
-            this.startSynthMelody(this.currentTrackId);
+            this.lastError = 'Could not autoplay audio. Tap Play to listen.';
           }
           this.notify();
         });

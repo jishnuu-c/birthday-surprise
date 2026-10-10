@@ -29,20 +29,34 @@ export const PublicSurprisePage: React.FC = () => {
     let isMounted = true;
 
     async function loadData() {
-      setLoading(true);
       const targetSlug = slug || 'sophia-25th';
-      const page = await resolvePageAsync(targetSlug);
 
-      if (isMounted) {
-        if (page) {
-          setConfig(page);
-          document.title = page.pageTitle || `Happy Birthday, ${page.recipientName}! ✨`;
-        } else {
-          // If not found, fall back gracefully to default demo
-          setConfig(DEFAULT_DEMO_CONFIG);
-          document.title = DEFAULT_DEMO_CONFIG.pageTitle;
+      // Immediate fast resolution with a 3s max timeout to prevent mobile network hangs
+      const resolvePromise = resolvePageAsync(targetSlug);
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2800));
+
+      try {
+        const page = await Promise.race([resolvePromise, timeoutPromise]);
+
+        if (isMounted) {
+          if (page) {
+            setConfig(page);
+            document.title = page.pageTitle || `Happy Birthday, ${page.recipientName}! ✨`;
+          } else {
+            // Check if local cache has it, or fall back to default
+            const localFallback = await resolvePageAsync(targetSlug);
+            const finalConfig = localFallback || DEFAULT_DEMO_CONFIG;
+            setConfig(finalConfig);
+            document.title = finalConfig.pageTitle || `Happy Birthday, ${finalConfig.recipientName}! ✨`;
+          }
+          setLoading(false);
         }
-        setLoading(false);
+      } catch (err) {
+        console.warn('Load data error:', err);
+        if (isMounted) {
+          setConfig(DEFAULT_DEMO_CONFIG);
+          setLoading(false);
+        }
       }
     }
 
@@ -55,13 +69,15 @@ export const PublicSurprisePage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100 p-4 select-none">
+      <div className="min-h-screen bg-[#160D1F] flex flex-col items-center justify-center text-[#FFF8F0] p-4 select-none">
         <div className="relative">
-          <Gift className="w-16 h-16 text-pink-500 animate-bounce" />
-          <div className="absolute -inset-4 bg-pink-500/30 rounded-full blur-xl animate-pulse" />
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#C72C55] to-[#E8C982] flex items-center justify-center text-[#160D1F] shadow-2xl shadow-[#C72C55]/30 animate-bounce">
+            <Gift className="w-8 h-8" />
+          </div>
+          <div className="absolute -inset-4 bg-[#E8C982]/20 rounded-full blur-xl animate-pulse" />
         </div>
-        <p className="mt-6 text-sm font-semibold tracking-wider text-pink-300 uppercase flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-300 animate-spin" />
+        <p className="mt-6 text-xs sm:text-sm font-bold tracking-widest text-[#E8C982] uppercase flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-[#E8C982] animate-spin" style={{ animationDuration: '4s' }} />
           <span>Unwrapping Birthday Surprise...</span>
         </p>
       </div>

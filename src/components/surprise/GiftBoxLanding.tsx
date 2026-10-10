@@ -28,12 +28,11 @@ export const GiftBoxLanding: React.FC<GiftBoxLandingProps> = ({
     if (isOpening) return;
     setIsOpening(true);
 
-    // Audio triggers
+    // Audio triggers - start synchronously inside user touch handler so mobile browsers allow playback
+    audioEngine.unlockAudio();
     audioEngine.playGiftPop();
     if (config.theme.enableSoundEffects) {
-      setTimeout(() => {
-        audioEngine.play(config.bgMusicTrackId, config.customAudioUrl);
-      }, 500);
+      audioEngine.play(config.bgMusicTrackId, config.customAudioUrl);
     }
 
     // Fire golden celebration confetti & sparkles

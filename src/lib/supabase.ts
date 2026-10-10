@@ -21,16 +21,19 @@ export async function fetchRemoteBirthdayPage(slugOrId: string): Promise<Birthda
   try {
     const { data, error } = await supabase
       .from('birthday_pages')
-      .select('config')
+      .select('config, updated_at')
       .or(`slug.eq.${slugOrId},id.eq.${slugOrId}`)
-      .eq('is_published', true)
-      .single();
+      .order('updated_at', { ascending: false })
+      .limit(1);
 
-    if (error || !data) {
-      console.warn('Supabase fetch notice:', error?.message);
+    if (error) {
+      console.warn('Supabase fetch notice:', error.message);
       return null;
     }
-    return data.config as BirthdayPageConfig;
+    if (!data || data.length === 0 || !data[0].config) {
+      return null;
+    }
+    return data[0].config as BirthdayPageConfig;
   } catch (err) {
     console.warn('Failed to query Supabase:', err);
     return null;
@@ -46,7 +49,7 @@ export async function saveRemoteBirthdayPage(config: BirthdayPageConfig): Promis
         id: config.id,
         slug: config.slug,
         recipient_name: config.recipientName,
-        is_published: config.isPublished,
+        is_published: config.isPublished ?? true,
         config: config,
         updated_at: new Date().toISOString()
       }, { onConflict: 'id' });

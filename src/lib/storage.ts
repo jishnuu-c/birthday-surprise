@@ -36,37 +36,65 @@ export function getPageById(idOrSlug: string): BirthdayPageConfig | null {
 }
 
 export async function resolvePageAsync(idOrSlug: string): Promise<BirthdayPageConfig | null> {
-  // 1. Check local storage
+  // 1. Check if encoded in URL Hash or Query parameter (for instant zero-server sharing across phones)
+  if (typeof window !== 'undefined') {
+    let base64Payload: string | null = null;
+    if (window.location.hash.startsWith('#data=')) {
+      base64Payload = window.location.hash.replace('#data=', '');
+    } else {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.has('data')) {
+        base64Payload = searchParams.get('data');
+      }
+    }
+
+    if (base64Payload) {
+      try {
+        const json = decodeURIComponent(escape(atob(base64Payload)));
+        const parsed = JSON.parse(json) as BirthdayPageConfig;
+        if (parsed && parsed.recipientName) {
+          // Check if local is older or doesn't exist
+          const local = getPageById(idOrSlug);
+          if (!local || new Date(parsed.updatedAt || 0) >= new Date(local.updatedAt || 0)) {
+            savePageLocally(parsed);
+            const resolved = await resolveLocalMediaUrls(parsed);
+            return resolved;
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to parse data URL payload:', e);
+      }
+    }
+  }
+
+  // 2. Try Remote Supabase if enabled (to get latest published theme across any device)
+  if (isSupabaseConfigured) {
+    try {
+      const remote = await fetchRemoteBirthdayPage(idOrSlug);
+      const local = getPageById(idOrSlug);
+
+      if (remote) {
+        // If remote has the newest timestamp or local doesn't exist, use remote
+        if (!local || new Date(remote.updatedAt || 0) >= new Date(local.updatedAt || 0)) {
+          savePageLocally(remote);
+          const resolved = await resolveLocalMediaUrls(remote);
+          return resolved;
+        } else {
+          // Local is newer (e.g. user just edited in the same browser)
+          const resolved = await resolveLocalMediaUrls(local);
+          return resolved;
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase resolve error, falling back to local:', err);
+    }
+  }
+
+  // 3. Check local storage cache
   const local = getPageById(idOrSlug);
   if (local) {
     const resolved = await resolveLocalMediaUrls(local);
     return resolved;
-  }
-
-  // 2. Check if encoded in URL Hash (for instant zero-server sharing across any phone)
-  if (typeof window !== 'undefined' && window.location.hash.startsWith('#data=')) {
-    try {
-      const base64 = window.location.hash.replace('#data=', '');
-      const json = decodeURIComponent(escape(atob(base64)));
-      const parsed = JSON.parse(json) as BirthdayPageConfig;
-      if (parsed && parsed.recipientName) {
-        savePageLocally(parsed);
-        const resolved = await resolveLocalMediaUrls(parsed);
-        return resolved;
-      }
-    } catch (e) {
-      console.warn('Failed to parse hash payload:', e);
-    }
-  }
-
-  // 3. Try Remote Supabase if enabled
-  if (isSupabaseConfigured) {
-    const remote = await fetchRemoteBirthdayPage(idOrSlug);
-    if (remote) {
-      savePageLocally(remote);
-      const resolved = await resolveLocalMediaUrls(remote);
-      return resolved;
-    }
   }
 
   return null;
