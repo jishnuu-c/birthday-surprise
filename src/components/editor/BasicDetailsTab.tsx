@@ -158,9 +158,35 @@ export const BasicDetailsTab: React.FC<BasicDetailsTabProps> = ({ config, onChan
 
       {/* Personal Birthday Letter */}
       <div className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4">
-        <div className="flex items-center gap-2 text-sm font-bold text-pink-300 uppercase tracking-wider">
-          <FileText className="w-4 h-4" />
-          <span>Personal Handwritten Letter</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-bold text-pink-300 uppercase tracking-wider">
+            <FileText className="w-4 h-4" />
+            <span>Personal Handwritten Letter</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onChange({
+                  letterHeading: `A Special Letter for ${config.recipientName || 'You'}`,
+                  letterContent: `Dear ${config.recipientName || 'Friend'},\n\nWishing you the happiest birthday ever! May your day be filled with endless smiles, sweet memories, and every single thing you have been wishing for.\n\nThank you for being such an extraordinary light in this world!`,
+                  letterClosing: `With love and celebration,\n— Your Best Friend ❤️`
+                });
+              }}
+              className="text-[11px] text-pink-400 hover:text-pink-300 underline cursor-pointer"
+            >
+              Reset to Template
+            </button>
+            <span className="text-slate-600">|</span>
+            <button
+              type="button"
+              onClick={() => onChange({ letterContent: '' })}
+              className="text-[11px] text-red-400 hover:text-red-300 underline cursor-pointer"
+            >
+              Clear Letter
+            </button>
+          </div>
         </div>
 
         <div>
@@ -169,7 +195,7 @@ export const BasicDetailsTab: React.FC<BasicDetailsTabProps> = ({ config, onChan
           </label>
           <input
             type="text"
-            value={config.letterHeading}
+            value={config.letterHeading || ''}
             onChange={(e) => onChange({ letterHeading: e.target.value })}
             placeholder="e.g. A Letter from the Heart"
             className="w-full bg-slate-900/90 border border-white/15 focus:border-pink-500 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 outline-none transition-colors"
@@ -181,10 +207,10 @@ export const BasicDetailsTab: React.FC<BasicDetailsTabProps> = ({ config, onChan
             Letter Message (Handwritten Font & Typewriter Reveal)
           </label>
           <textarea
-            rows={6}
-            value={config.letterContent}
+            rows={7}
+            value={config.letterContent || ''}
             onChange={(e) => onChange({ letterContent: e.target.value })}
-            placeholder="Write your heartfelt message here..."
+            placeholder="Write your heartfelt message here... Line breaks and paragraphs are preserved!"
             className="w-full bg-slate-900/90 border border-white/15 focus:border-pink-500 rounded-xl p-3.5 text-sm text-slate-100 outline-none transition-colors"
           />
         </div>
@@ -196,7 +222,7 @@ export const BasicDetailsTab: React.FC<BasicDetailsTabProps> = ({ config, onChan
           </label>
           <input
             type="text"
-            value={config.letterClosing}
+            value={config.letterClosing || ''}
             onChange={(e) => onChange({ letterClosing: e.target.value })}
             placeholder="e.g. Forever cheering for you with all my love, — Alex ❤️"
             className="w-full bg-slate-900/90 border border-white/15 focus:border-pink-500 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 outline-none transition-colors"

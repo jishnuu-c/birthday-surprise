@@ -8,7 +8,7 @@ interface PhotoGalleryProps {
 }
 
 export const PhotoGallery: React.FC<PhotoGalleryProps> = ({ config }) => {
-  const [photos] = useState<GalleryPhoto[]>(config.galleryPhotos || []);
+  const photos = config.galleryPhotos || [];
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isSlideshowPlaying, setIsSlideshowPlaying] = useState(false);
 

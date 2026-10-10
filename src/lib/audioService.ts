@@ -1,4 +1,15 @@
-// Web Audio API Synthesizer & Audio Engine for Birthday Magic
+// Web Audio API Synthesizer & Advanced Audio Engine for Birthday Magic
+
+export interface AudioState {
+  isPlaying: boolean;
+  isMuted: boolean;
+  currentTrackId: string;
+  customUrl?: string;
+  currentTime: number;
+  duration: number;
+  volume: number;
+  error?: string | null;
+}
 
 class BirthdayAudioEngine {
   private ctx: AudioContext | null = null;
@@ -8,77 +19,162 @@ class BirthdayAudioEngine {
   private htmlAudio: HTMLAudioElement | null = null;
   private masterGain: GainNode | null = null;
   private currentTrackId: string = 'synth-happy-birthday-warm';
-  private listeners: Set<(playing: boolean) => void> = new Set();
+  private currentCustomUrl?: string;
+  private volume: number = 0.8;
+  private duration: number = 0;
+  private currentTime: number = 0;
+  private lastError: string | null = null;
+  private listeners: Set<(state: AudioState) => void> = new Set();
 
   constructor() {
     // AudioContext will be initialized on first user interaction to comply with browser autoplay policies
   }
 
   private initContext() {
-    if (!this.ctx) {
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (AudioContextClass) {
-        this.ctx = new AudioContextClass();
-        this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.setValueAtTime(0.5, this.ctx.currentTime);
-        this.masterGain.connect(this.ctx.destination);
+    try {
+      if (!this.ctx) {
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (AudioContextClass) {
+          this.ctx = new AudioContextClass();
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume * 0.6, this.ctx.currentTime);
+          this.masterGain.connect(this.ctx.destination);
+        }
       }
-    }
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+    } catch (e) {
+      console.warn('AudioContext init notice:', e);
     }
   }
 
-  public subscribe(listener: (playing: boolean) => void) {
+  public subscribe(listener: (state: AudioState) => void) {
     this.listeners.add(listener);
-    listener(this.isPlaying);
+    listener(this.getState());
     return () => {
       this.listeners.delete(listener);
     };
   }
 
+  public getState(): AudioState {
+    return {
+      isPlaying: this.isPlaying,
+      isMuted: this.isMuted,
+      currentTrackId: this.currentTrackId,
+      customUrl: this.currentCustomUrl,
+      currentTime: this.currentTime,
+      duration: this.duration,
+      volume: this.volume,
+      error: this.lastError
+    };
+  }
+
   private notify() {
-    this.listeners.forEach(fn => fn(this.isPlaying));
+    const state = this.getState();
+    this.listeners.forEach(fn => {
+      try {
+        fn(state);
+      } catch (err) {
+        console.error('Audio listener error:', err);
+      }
+    });
   }
 
   public togglePlay(trackId?: string, customUrl?: string) {
     if (this.isPlaying) {
       this.pause();
     } else {
-      this.play(trackId || this.currentTrackId, customUrl);
+      this.play(trackId || this.currentTrackId, customUrl || this.currentCustomUrl);
     }
   }
 
   public play(trackId: string = 'synth-happy-birthday-warm', customUrl?: string) {
     this.initContext();
     this.currentTrackId = trackId;
+    this.currentCustomUrl = customUrl;
+    this.lastError = null;
 
-    if (customUrl) {
+    if (customUrl && customUrl.trim() !== '') {
       this.stopSynth();
-      if (!this.htmlAudio) {
-        this.htmlAudio = new Audio();
-        this.htmlAudio.loop = true;
-      }
-      this.htmlAudio.src = customUrl;
-      this.htmlAudio.muted = this.isMuted;
-      this.htmlAudio.play().then(() => {
-        this.isPlaying = true;
-        this.notify();
-      }).catch(err => {
-        console.warn('HTML Audio playback error:', err);
-      });
+      this.setupHtmlAudio(customUrl);
       return;
     }
 
-    // Stop html audio if playing
+    // If no custom URL, stop HTML audio and play Synth Melody
     if (this.htmlAudio) {
       this.htmlAudio.pause();
     }
 
-    // Play Synth Melody
     this.startSynthMelody(trackId);
     this.isPlaying = true;
     this.notify();
+  }
+
+  private setupHtmlAudio(url: string) {
+    if (!this.htmlAudio) {
+      this.htmlAudio = new Audio();
+      this.htmlAudio.loop = true;
+      this.htmlAudio.preload = 'auto';
+
+      this.htmlAudio.addEventListener('timeupdate', () => {
+        if (this.htmlAudio) {
+          this.currentTime = this.htmlAudio.currentTime;
+          this.duration = this.htmlAudio.duration || 0;
+          this.notify();
+        }
+      });
+
+      this.htmlAudio.addEventListener('loadedmetadata', () => {
+        if (this.htmlAudio) {
+          this.duration = this.htmlAudio.duration || 0;
+          this.notify();
+        }
+      });
+
+      this.htmlAudio.addEventListener('ended', () => {
+        if (!this.htmlAudio?.loop) {
+          this.isPlaying = false;
+          this.notify();
+        }
+      });
+
+      this.htmlAudio.addEventListener('error', (e) => {
+        console.warn('HTML Audio error event:', e);
+        this.lastError = 'Could not load audio file. Please ensure it is a valid MP3, WAV, M4A, or OGG format.';
+        this.isPlaying = false;
+        this.notify();
+      });
+    }
+
+    if (this.htmlAudio.src !== url) {
+      this.htmlAudio.src = url;
+      this.htmlAudio.load();
+    }
+
+    this.htmlAudio.muted = this.isMuted;
+    this.htmlAudio.volume = this.volume;
+
+    const playPromise = this.htmlAudio.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          this.isPlaying = true;
+          this.lastError = null;
+          this.notify();
+        })
+        .catch((err) => {
+          // Autoplay blocked by browser until user interaction, or decoding issue
+          if (err.name === 'NotAllowedError') {
+            console.log('Autoplay deferred until user interaction');
+          } else {
+            console.warn('Audio play rejection:', err);
+            this.lastError = 'Audio playback was blocked or format unsupported. Tap Play to listen.';
+          }
+          this.isPlaying = false;
+          this.notify();
+        });
+    }
   }
 
   public pause() {
@@ -90,14 +186,43 @@ class BirthdayAudioEngine {
     this.notify();
   }
 
+  public stop() {
+    this.pause();
+    if (this.htmlAudio) {
+      this.htmlAudio.currentTime = 0;
+    }
+    this.currentTime = 0;
+    this.notify();
+  }
+
+  public seek(seconds: number) {
+    if (this.htmlAudio && Number.isFinite(seconds)) {
+      this.htmlAudio.currentTime = Math.max(0, Math.min(seconds, this.duration || 1000));
+      this.currentTime = this.htmlAudio.currentTime;
+      this.notify();
+    }
+  }
+
+  public setVolume(vol: number) {
+    this.volume = Math.max(0, Math.min(1, vol));
+    if (this.htmlAudio) {
+      this.htmlAudio.volume = this.volume;
+    }
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume * 0.6, this.ctx.currentTime);
+    }
+    this.notify();
+  }
+
   public setMute(mute: boolean) {
     this.isMuted = mute;
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(mute ? 0 : 0.5, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(mute ? 0 : this.volume * 0.6, this.ctx.currentTime);
     }
     if (this.htmlAudio) {
       this.htmlAudio.muted = mute;
     }
+    this.notify();
   }
 
   public toggleMute(): boolean {
@@ -126,7 +251,7 @@ class BirthdayAudioEngine {
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(180, now);
       osc.frequency.exponentialRampToValueAtTime(720, now + 0.35);
-      gain.gain.setValueAtTime(0.4, now);
+      gain.gain.setValueAtTime(0.4 * this.volume, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
       osc.connect(gain);
       gain.connect(this.masterGain);
@@ -140,7 +265,7 @@ class BirthdayAudioEngine {
         const chimeGain = this.ctx!.createGain();
         chimeOsc.type = 'sine';
         chimeOsc.frequency.setValueAtTime(freq, now + 0.1 + i * 0.07);
-        chimeGain.gain.setValueAtTime(0.25, now + 0.1 + i * 0.07);
+        chimeGain.gain.setValueAtTime(0.25 * this.volume, now + 0.1 + i * 0.07);
         chimeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8 + i * 0.07);
         chimeOsc.connect(chimeGain);
         chimeGain.connect(this.masterGain!);
@@ -174,7 +299,7 @@ class BirthdayAudioEngine {
       filter.frequency.exponentialRampToValueAtTime(200, now + 0.7);
 
       const gain = this.ctx.createGain();
-      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.setValueAtTime(0.3 * this.volume, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
 
       noise.connect(filter);
@@ -209,7 +334,7 @@ class BirthdayAudioEngine {
         const gain = this.ctx!.createGain();
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(f, now + t);
-        gain.gain.setValueAtTime(0.35, now + t);
+        gain.gain.setValueAtTime(0.35 * this.volume, now + t);
         gain.gain.exponentialRampToValueAtTime(0.001, now + t + d);
         osc.connect(gain);
         gain.connect(this.masterGain!);
@@ -232,7 +357,7 @@ class BirthdayAudioEngine {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(320, now);
       osc.frequency.exponentialRampToValueAtTime(880, now + 0.2);
-      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.setValueAtTime(0.2 * this.volume, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
       osc.connect(gain);
       gain.connect(this.masterGain);
@@ -312,7 +437,7 @@ class BirthdayAudioEngine {
 
       const noteDuration = (currentMelody.speed / 1000) * 1.6;
       gain.gain.setValueAtTime(0.001, now);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.18 * this.volume, now + 0.05);
       gain.gain.exponentialRampToValueAtTime(0.001, now + noteDuration);
 
       osc.connect(gain);
@@ -330,3 +455,4 @@ class BirthdayAudioEngine {
 }
 
 export const audioEngine = new BirthdayAudioEngine();
+

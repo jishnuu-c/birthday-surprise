@@ -47,3 +47,10 @@ CREATE POLICY "Allow public uploads for birthday media"
 ON storage.objects
 FOR INSERT
 WITH CHECK (bucket_id = 'birthday-media');
+
+CREATE POLICY "Allow public updates for birthday media"
+ON storage.objects
+FOR UPDATE
+USING (bucket_id = 'birthday-media')
+WITH CHECK (bucket_id = 'birthday-media');
+

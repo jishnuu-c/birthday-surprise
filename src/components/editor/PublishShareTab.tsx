@@ -27,10 +27,15 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
       const result = await saveAndPublishPage(config);
       onUpdateConfig({ isPublished: true });
       setPublishedUrl(result.url);
-      setStatusMessage('🎉 Page published successfully! Ready to share with the recipient.');
-    } catch (err) {
+      if (result.error) {
+        setStatusMessage(`⚠️ Page saved locally! Supabase Cloud notice: ${result.error}. Your page is ready and shareable.`);
+      } else {
+        setStatusMessage('🎉 Page published successfully! Ready to share with the recipient.');
+      }
+    } catch (err: unknown) {
       console.error('Publish error:', err);
-      setStatusMessage('Error publishing page. Please try again.');
+      const msg = err instanceof Error ? err.message : 'Error publishing page. Please try again.';
+      setStatusMessage(`Error publishing page: ${msg}`);
     } finally {
       setIsPublishing(false);
     }

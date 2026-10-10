@@ -9,7 +9,7 @@ interface SectionManagerTabProps {
 
 export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, onChange }) => {
   const sections = config.sections;
-  const [activeSubTab, setActiveSubTab] = useState<'toggles' | 'timeline' | 'reasons' | 'cake' | 'scratch'>('toggles');
+  const [activeSubTab, setActiveSubTab] = useState<'toggles' | 'timeline' | 'reasons' | 'cake' | 'scratch' | 'finale'>('toggles');
 
   const toggleSection = (key: keyof SectionsConfig) => {
     onChange({
@@ -130,7 +130,16 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
           }`}
         >
           <Ticket className="w-3.5 h-3.5" />
-          <span>Scratch Mystery Card</span>
+          <span>Scratch Card</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('finale')}
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+            activeSubTab === 'finale' ? 'bg-pink-500 text-white shadow-md' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+          }`}
+        >
+          <span>🎆 Final Finale</span>
         </button>
       </div>
 
@@ -186,6 +195,7 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
               Memory Timeline Milestones
             </span>
             <button
+              type="button"
               onClick={addTimelineItem}
               className="px-3 py-1.5 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
             >
@@ -194,14 +204,42 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
             </button>
           </div>
 
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Timeline Section Title
+              </label>
+              <input
+                type="text"
+                value={config.timelineHeading || ''}
+                onChange={(e) => onChange({ timelineHeading: e.target.value })}
+                placeholder="e.g. Chapters of Our Journey"
+                className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-100 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Timeline Subtitle
+              </label>
+              <input
+                type="text"
+                value={config.timelineSubtitle || ''}
+                onChange={(e) => onChange({ timelineSubtitle: e.target.value })}
+                placeholder="e.g. Looking back at the milestones..."
+                className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-100 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-2">
             {config.timelineMemories?.map((mem, index) => (
               <div key={mem.id || index} className="p-4 rounded-xl bg-slate-900/90 border border-white/10 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-300">Milestone #{index + 1}</span>
                   <button
+                    type="button"
                     onClick={() => deleteTimelineItem(index)}
-                    className="text-red-400 hover:text-red-300 text-xs p-1"
+                    className="text-red-400 hover:text-red-300 text-xs p-1 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -253,6 +291,7 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
               Reasons Why You Are Special
             </span>
             <button
+              type="button"
               onClick={addReasonItem}
               className="px-3 py-1.5 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
             >
@@ -261,7 +300,34 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
             </button>
           </div>
 
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Reasons Section Title
+              </label>
+              <input
+                type="text"
+                value={config.reasonsHeading || ''}
+                onChange={(e) => onChange({ reasonsHeading: e.target.value })}
+                placeholder="e.g. Reasons Why You Are Special"
+                className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-100 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Reasons Subtitle
+              </label>
+              <input
+                type="text"
+                value={config.reasonsSubtitle || ''}
+                onChange={(e) => onChange({ reasonsSubtitle: e.target.value })}
+                placeholder="e.g. Tap any card to reveal what makes you wonderful..."
+                className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-100 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-2">
             {config.reasonsList?.map((reason, index) => (
               <div key={reason.id || index} className="p-4 rounded-xl bg-slate-900/90 border border-white/10 space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -279,8 +345,9 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
                     className="flex-1 bg-slate-950 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-100 outline-none"
                   />
                   <button
+                    type="button"
                     onClick={() => deleteReasonItem(index)}
-                    className="text-red-400 hover:text-red-300 p-1"
+                    className="text-red-400 hover:text-red-300 p-1 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -326,7 +393,7 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
               </label>
               <input
                 type="text"
-                value={config.wishPrompt}
+                value={config.wishPrompt || ''}
                 onChange={(e) => onChange({ wishPrompt: e.target.value })}
                 className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-100 outline-none"
               />
@@ -339,7 +406,7 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
             </label>
             <textarea
               rows={2}
-              value={config.wishCompletedMessage}
+              value={config.wishCompletedMessage || ''}
               onChange={(e) => onChange({ wishCompletedMessage: e.target.value })}
               className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-100 outline-none resize-none"
             />
@@ -361,7 +428,7 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
               </label>
               <input
                 type="text"
-                value={config.scratchTitle}
+                value={config.scratchTitle || ''}
                 onChange={(e) => onChange({ scratchTitle: e.target.value })}
                 className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-100 outline-none"
               />
@@ -387,10 +454,58 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({ config, on
             </label>
             <textarea
               rows={3}
-              value={config.scratchSecretMessage}
+              value={config.scratchSecretMessage || ''}
               onChange={(e) => onChange({ scratchSecretMessage: e.target.value })}
               placeholder="e.g. 🎟️ VIP PASS: All-Expense-Paid Dinner at Your Dream Restaurant!"
               className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-100 outline-none"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 6. Finale Grand Celebration Config */}
+      {activeSubTab === 'finale' && (
+        <div className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4">
+          <span className="text-sm font-bold text-pink-300 uppercase tracking-wider block">
+            Final Celebration & Fireworks Finale
+          </span>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Final Surprise Headline
+            </label>
+            <input
+              type="text"
+              value={config.finalSurpriseHeadline || ''}
+              onChange={(e) => onChange({ finalSurpriseHeadline: e.target.value })}
+              placeholder="e.g. Here is to Your Most Incredible Year Yet!"
+              className="w-full bg-slate-900 border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Final Surprise Message
+            </label>
+            <textarea
+              rows={3}
+              value={config.finalSurpriseMessage || ''}
+              onChange={(e) => onChange({ finalSurpriseMessage: e.target.value })}
+              placeholder="e.g. Never forget how deeply you are loved, cherished, and celebrated today and every single day."
+              className="w-full bg-slate-900 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-slate-100 outline-none resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Action Button Text
+            </label>
+            <input
+              type="text"
+              value={config.finalButtonText || ''}
+              onChange={(e) => onChange({ finalButtonText: e.target.value })}
+              placeholder="e.g. Pop Massive Fireworks & Confetti! 🎆"
+              className="w-full bg-slate-900 border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 outline-none"
             />
           </div>
         </div>

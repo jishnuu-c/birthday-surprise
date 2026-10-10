@@ -1,6 +1,7 @@
 import { BirthdayPageConfig } from '../types';
 import { DEFAULT_DEMO_CONFIG } from '../constants/presets';
 import { fetchRemoteBirthdayPage, isSupabaseConfigured, saveRemoteBirthdayPage } from './supabase';
+import { getMediaBlobUrl } from './mediaDb';
 
 const STORAGE_KEY_PAGES = 'birthday_magic_pages_v1';
 const STORAGE_KEY_CURRENT = 'birthday_magic_active_page_id';
@@ -11,7 +12,11 @@ export function getAllPages(): BirthdayPageConfig[] {
     const raw = localStorage.getItem(STORAGE_KEY_PAGES);
     if (!raw) {
       const initial = [DEFAULT_DEMO_CONFIG];
-      localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(initial));
+      try {
+        localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(initial));
+      } catch {
+        // ignore quota
+      }
       return initial;
     }
     const parsed = JSON.parse(raw);
@@ -33,16 +38,19 @@ export function getPageById(idOrSlug: string): BirthdayPageConfig | null {
 export async function resolvePageAsync(idOrSlug: string): Promise<BirthdayPageConfig | null> {
   // 1. Check local storage
   const local = getPageById(idOrSlug);
-  if (local) return local;
+  if (local) {
+    // If local has indexedDB references for audio or video, resolve them
+    const resolved = await resolveLocalMediaUrls(local);
+    return resolved;
+  }
 
   // 2. Check if encoded in URL Hash (for instant zero-server sharing across any phone)
-  if (window.location.hash.startsWith('#data=')) {
+  if (typeof window !== 'undefined' && window.location.hash.startsWith('#data=')) {
     try {
       const base64 = window.location.hash.replace('#data=', '');
       const json = decodeURIComponent(escape(atob(base64)));
       const parsed = JSON.parse(json) as BirthdayPageConfig;
       if (parsed && parsed.recipientName) {
-        // Save to local cache
         savePageLocally(parsed);
         return parsed;
       }
@@ -63,35 +71,63 @@ export async function resolvePageAsync(idOrSlug: string): Promise<BirthdayPageCo
   return null;
 }
 
-export function savePageLocally(config: BirthdayPageConfig): void {
-  const pages = getAllPages();
-  const index = pages.findIndex(p => p.id === config.id);
-  const updated = {
-    ...config,
-    updatedAt: new Date().toISOString()
-  };
-
-  if (index >= 0) {
-    pages[index] = updated;
-  } else {
-    pages.push(updated);
+async function resolveLocalMediaUrls(config: BirthdayPageConfig): Promise<BirthdayPageConfig> {
+  const copy = { ...config };
+  if (copy.customAudioUrl && copy.customAudioUrl.startsWith('indexeddb:')) {
+    const key = copy.customAudioUrl.replace('indexeddb:', '');
+    const blobUrl = await getMediaBlobUrl(key);
+    if (blobUrl) {
+      copy.customAudioUrl = blobUrl;
+    }
   }
-
-  localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(pages));
+  if (copy.videoUrl && copy.videoUrl.startsWith('indexeddb:')) {
+    const key = copy.videoUrl.replace('indexeddb:', '');
+    const blobUrl = await getMediaBlobUrl(key);
+    if (blobUrl) {
+      copy.videoUrl = blobUrl;
+    }
+  }
+  return copy;
 }
 
-export async function saveAndPublishPage(config: BirthdayPageConfig): Promise<{ success: boolean; url: string }> {
+export function savePageLocally(config: BirthdayPageConfig): void {
+  try {
+    const pages = getAllPages();
+    const index = pages.findIndex(p => p.id === config.id);
+    const updated = {
+      ...config,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (index >= 0) {
+      pages[index] = updated;
+    } else {
+      pages.push(updated);
+    }
+
+    localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(pages));
+  } catch (err) {
+    console.warn('localStorage save warning (may be quota full):', err);
+  }
+}
+
+export async function saveAndPublishPage(config: BirthdayPageConfig): Promise<{ success: boolean; url: string; error?: string }> {
   // Update local
-  const publishedConfig = {
+  const publishedConfig: BirthdayPageConfig = {
     ...config,
     isPublished: true,
     updatedAt: new Date().toISOString()
   };
   savePageLocally(publishedConfig);
 
+  let remoteError: string | undefined;
+
   // Sync to Supabase if configured
   if (isSupabaseConfigured) {
-    await saveRemoteBirthdayPage(publishedConfig);
+    const result = await saveRemoteBirthdayPage(publishedConfig);
+    if (!result.success) {
+      remoteError = result.error;
+    }
   }
 
   // Generate public URL
@@ -100,13 +136,23 @@ export async function saveAndPublishPage(config: BirthdayPageConfig): Promise<{ 
 
   return {
     success: true,
-    url: publicUrl
+    url: publicUrl,
+    error: remoteError
   };
 }
 
 export function generateShareableDataUrl(config: BirthdayPageConfig): string {
   try {
-    const json = JSON.stringify(config);
+    // Exclude oversized local-only blobs from hash URL
+    const exportableConfig = { ...config };
+    if (exportableConfig.customAudioUrl && (exportableConfig.customAudioUrl.startsWith('blob:') || exportableConfig.customAudioUrl.length > 200000)) {
+      exportableConfig.customAudioUrl = '';
+    }
+    if (exportableConfig.videoUrl && (exportableConfig.videoUrl.startsWith('blob:') || exportableConfig.videoUrl.length > 200000)) {
+      exportableConfig.videoUrl = '';
+    }
+
+    const json = JSON.stringify(exportableConfig);
     const base64 = btoa(unescape(encodeURIComponent(json)));
     return `${window.location.origin}/b/${config.slug || config.id}#data=${base64}`;
   } catch (err) {
@@ -117,7 +163,11 @@ export function generateShareableDataUrl(config: BirthdayPageConfig): string {
 
 export function deletePage(id: string): void {
   const pages = getAllPages().filter(p => p.id !== id);
-  localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(pages));
+  try {
+    localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(pages));
+  } catch {
+    // ignore
+  }
 }
 
 export function getActivePageId(): string {
@@ -164,8 +214,8 @@ export function createNewBirthdayPage(recipientName: string = 'My Best Friend'):
   return newConfig;
 }
 
-// Image compression helper for smooth mobile uploads
-export function compressImageFile(file: File, maxWidth = 1400, quality = 0.85): Promise<string> {
+// Image compression helper for smooth mobile uploads and optimal storage size
+export function compressImageFile(file: File, maxWidth = 1200, quality = 0.85): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -198,3 +248,4 @@ export function compressImageFile(file: File, maxWidth = 1400, quality = 0.85): 
     reader.onerror = (err) => reject(err);
   });
 }
+
