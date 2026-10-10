@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { BirthdayPageConfig } from '../types';
-import { resolvePageAsync } from '../lib/storage';
+import { resolvePageAsync, getPageById } from '../lib/storage';
 import { DEFAULT_DEMO_CONFIG } from '../constants/presets';
 import { ThemeBackground } from '../components/common/ThemeBackground';
 import { FloatingMusicPlayer } from '../components/common/FloatingMusicPlayer';
@@ -20,8 +20,32 @@ import { Sparkles, Heart, Gift } from 'lucide-react';
 
 export const PublicSurprisePage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
-  const [config, setConfig] = useState<BirthdayPageConfig | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [config, setConfig] = useState<BirthdayPageConfig | null>(() => {
+    // Instant synchronous bootstrap from hash or local cache
+    const targetSlug = slug || 'sophia-25th';
+    if (typeof window !== 'undefined') {
+      if (window.location.hash.startsWith('#data=') || window.location.search.includes('data=')) {
+        try {
+          const payload = window.location.hash.startsWith('#data=')
+            ? window.location.hash.replace('#data=', '')
+            : new URLSearchParams(window.location.search).get('data') || '';
+          if (payload) {
+            const json = decodeURIComponent(escape(atob(payload)));
+            const parsed = JSON.parse(json) as BirthdayPageConfig;
+            if (parsed && parsed.recipientName) {
+              return parsed;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+    const local = getPageById(targetSlug);
+    return local || null;
+  });
+
+  const [loading, setLoading] = useState<boolean>(() => config === null);
   const [hasOpenedGift, setHasOpenedGift] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
@@ -31,30 +55,20 @@ export const PublicSurprisePage: React.FC = () => {
     async function loadData() {
       const targetSlug = slug || 'sophia-25th';
 
-      // Immediate fast resolution with a 3s max timeout to prevent mobile network hangs
-      const resolvePromise = resolvePageAsync(targetSlug);
-      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2800));
-
       try {
-        const page = await Promise.race([resolvePromise, timeoutPromise]);
-
+        const resolved = await resolvePageAsync(targetSlug);
         if (isMounted) {
-          if (page) {
-            setConfig(page);
-            document.title = page.pageTitle || `Happy Birthday, ${page.recipientName}! ✨`;
-          } else {
-            // Check if local cache has it, or fall back to default
-            const localFallback = await resolvePageAsync(targetSlug);
-            const finalConfig = localFallback || DEFAULT_DEMO_CONFIG;
-            setConfig(finalConfig);
-            document.title = finalConfig.pageTitle || `Happy Birthday, ${finalConfig.recipientName}! ✨`;
-          }
+          const finalPage = resolved || config || DEFAULT_DEMO_CONFIG;
+          setConfig(finalPage);
+          document.title = finalPage.pageTitle || `Happy Birthday, ${finalPage.recipientName}! ✨`;
           setLoading(false);
         }
       } catch (err) {
-        console.warn('Load data error:', err);
+        console.warn('Load data notice:', err);
         if (isMounted) {
-          setConfig(DEFAULT_DEMO_CONFIG);
+          if (!config) {
+            setConfig(DEFAULT_DEMO_CONFIG);
+          }
           setLoading(false);
         }
       }

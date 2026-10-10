@@ -38,10 +38,10 @@ export const GiftBoxLanding: React.FC<GiftBoxLandingProps> = ({
     // Fire golden celebration confetti & sparkles
     fireConfettiCannon();
 
-    // Cinematic transition timeout
+    // Fast, responsive, cinematic transition timeout (650ms)
     setTimeout(() => {
       onOpenSurprise();
-    }, 1800);
+    }, 650);
   };
 
   return (
@@ -195,9 +195,9 @@ export const GiftBoxLanding: React.FC<GiftBoxLandingProps> = ({
             animate={
               isOpening
                 ? {
-                    y: -180,
-                    rotateX: -45,
-                    rotateZ: 20,
+                    y: -150,
+                    rotateX: -40,
+                    rotateZ: 15,
                     opacity: 0,
                     scale: 0.85
                   }
@@ -205,7 +205,7 @@ export const GiftBoxLanding: React.FC<GiftBoxLandingProps> = ({
                     y: isHovered ? -8 : 0
                   }
             }
-            transition={{ duration: 0.95, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
           >
             {/* Bevel highlight */}
             <div className="absolute top-0 inset-x-0 h-[2px] bg-white/40 rounded-t-2xl" />

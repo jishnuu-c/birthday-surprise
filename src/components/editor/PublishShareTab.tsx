@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { BirthdayPageConfig } from '../../types';
 import { saveAndPublishPage, generateShareableDataUrl } from '../../lib/storage';
@@ -12,12 +12,22 @@ interface PublishShareTabProps {
 
 export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpdateConfig }) => {
   const [isPublishing, setIsPublishing] = useState(false);
-  const [publishedUrl, setPublishedUrl] = useState(
-    `${window.location.origin}/b/${config.slug || config.id}`
-  );
+  const [publishedUrl, setPublishedUrl] = useState(() => {
+    return isSupabaseConfigured
+      ? `${window.location.origin}/b/${config.slug || config.id}`
+      : generateShareableDataUrl(config);
+  });
   const [copied, setCopied] = useState(false);
   const [copiedHash, setCopiedHash] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      setPublishedUrl(`${window.location.origin}/b/${config.slug || config.id}`);
+    } else {
+      setPublishedUrl(generateShareableDataUrl(config));
+    }
+  }, [config]);
 
   const handlePublish = async () => {
     setIsPublishing(true);
@@ -28,9 +38,9 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
       onUpdateConfig({ isPublished: true });
       setPublishedUrl(result.url);
       if (result.error) {
-        setStatusMessage(`⚠️ Page saved locally! Supabase Cloud notice: ${result.error}. Your page is ready and shareable.`);
+        setStatusMessage(`⚠️ Saved locally: ${result.error}. Your portable link is ready to share!`);
       } else {
-        setStatusMessage('🎉 Page published successfully! Ready to share with the recipient.');
+        setStatusMessage('🎉 Surprise Page published successfully! Ready to share across all devices.');
       }
     } catch (err: unknown) {
       console.error('Publish error:', err);

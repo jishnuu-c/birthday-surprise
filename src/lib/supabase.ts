@@ -19,6 +19,7 @@ export const supabase = isSupabaseConfigured
 export async function fetchRemoteBirthdayPage(slugOrId: string): Promise<BirthdayPageConfig | null> {
   if (!supabase) return null;
   try {
+    // 1. First attempt exact match on slug or id
     const { data, error } = await supabase
       .from('birthday_pages')
       .select('config, updated_at')
@@ -26,14 +27,25 @@ export async function fetchRemoteBirthdayPage(slugOrId: string): Promise<Birthda
       .order('updated_at', { ascending: false })
       .limit(1);
 
-    if (error) {
-      console.warn('Supabase fetch notice:', error.message);
-      return null;
+    if (!error && data && data.length > 0 && data[0].config) {
+      return data[0].config as BirthdayPageConfig;
     }
-    if (!data || data.length === 0 || !data[0].config) {
-      return null;
+
+    // 2. If no exact match and querying root/demo slug, fallback to most recently updated published page
+    if (slugOrId === 'sophia-25th' || slugOrId === 'demo-sophia-25' || slugOrId === 'default') {
+      const { data: latestData, error: latestErr } = await supabase
+        .from('birthday_pages')
+        .select('config, updated_at')
+        .eq('is_published', true)
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (!latestErr && latestData && latestData.length > 0 && latestData[0].config) {
+        return latestData[0].config as BirthdayPageConfig;
+      }
     }
-    return data[0].config as BirthdayPageConfig;
+
+    return null;
   } catch (err) {
     console.warn('Failed to query Supabase:', err);
     return null;

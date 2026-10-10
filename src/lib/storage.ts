@@ -79,13 +79,9 @@ export async function resolvePageAsync(idOrSlug: string): Promise<BirthdayPageCo
         const json = decodeURIComponent(escape(atob(base64Payload)));
         const parsed = JSON.parse(json) as BirthdayPageConfig;
         if (parsed && parsed.recipientName) {
-          // Check if local is older or doesn't exist
-          const local = getPageById(idOrSlug);
-          if (!local || new Date(parsed.updatedAt || 0) >= new Date(local.updatedAt || 0)) {
-            savePageLocally(parsed);
-            const resolved = await resolveLocalMediaUrls(parsed);
-            return resolved;
-          }
+          savePageLocally(parsed);
+          const resolved = await resolveLocalMediaUrls(parsed);
+          return resolved;
         }
       } catch (e) {
         console.warn('Failed to parse data URL payload:', e);
@@ -93,14 +89,14 @@ export async function resolvePageAsync(idOrSlug: string): Promise<BirthdayPageCo
     }
   }
 
-  // 2. Try Remote Supabase if enabled (to get latest published theme across any device)
+  // 2. Try Remote Supabase if enabled (to get latest published theme and content across any device)
   if (isSupabaseConfigured) {
     try {
       const remote = await fetchRemoteBirthdayPage(idOrSlug);
       const local = getPageById(idOrSlug);
 
       if (remote) {
-        // If remote has the newest timestamp or local doesn't exist, use remote
+        // If remote has a timestamp >= local or local doesn't exist, use remote
         if (!local || new Date(remote.updatedAt || 0) >= new Date(local.updatedAt || 0)) {
           savePageLocally(remote);
           const resolved = await resolveLocalMediaUrls(remote);
@@ -257,7 +253,9 @@ export async function saveAndPublishPage(config: BirthdayPageConfig): Promise<{ 
   const saveRes = await savePage(publishedConfig);
 
   const origin = window.location.origin;
-  const publicUrl = `${origin}/b/${config.slug || config.id}`;
+  const publicUrl = isSupabaseConfigured
+    ? `${origin}/b/${config.slug || config.id}`
+    : generateShareableDataUrl(publishedConfig);
 
   return {
     success: saveRes.success,

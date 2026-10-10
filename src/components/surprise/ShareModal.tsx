@@ -3,6 +3,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { X, Copy, Check, MessageCircle, Send, Share2, Sparkles, Smartphone } from 'lucide-react';
 import { BirthdayPageConfig } from '../../types';
 
+import { isSupabaseConfigured } from '../../lib/supabase';
+import { generateShareableDataUrl } from '../../lib/storage';
+
 interface ShareModalProps {
   config: BirthdayPageConfig;
   isOpen: boolean;
@@ -20,11 +23,16 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Use cloud public URL if Supabase is active, or instant zero-server portable URL (#data=) if offline/not configured
+  const effectiveShareUrl = isSupabaseConfigured 
+    ? (publicUrl.includes('#data=') ? publicUrl.split('#data=')[0] : publicUrl)
+    : generateShareableDataUrl(config);
+
   const recipient = config.recipientName || 'Someone Special';
-  const shareText = `🎂 A little birthday surprise created with love for ${recipient}! Open your gift here: ${publicUrl}`;
+  const shareText = `🎂 A little birthday surprise created with love for ${recipient}! Open your gift here: ${effectiveShareUrl}`;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(publicUrl);
+    navigator.clipboard.writeText(effectiveShareUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
@@ -35,7 +43,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   };
 
   const handleTelegram = () => {
-    const url = `https://t.me/share/url?url=${encodeURIComponent(publicUrl)}&text=${encodeURIComponent(`🎂 Birthday Surprise for ${recipient}!`)}`;
+    const url = `https://t.me/share/url?url=${encodeURIComponent(effectiveShareUrl)}&text=${encodeURIComponent(`🎂 Birthday Surprise for ${recipient}!`)}`;
     window.open(url, '_blank');
   };
 
@@ -72,10 +80,25 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           </p>
         </div>
 
+        {/* Cloud vs Portable Status Badge */}
+        <div className="mb-4 flex items-center justify-center">
+          {isSupabaseConfigured ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              Cloud Synchronized (Live Database)
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8C982]/15 border border-[#E8C982]/30 text-[#E8C982] text-[11px] font-semibold">
+              <Sparkles className="w-3 h-3 text-[#E8C982]" />
+              Portable Smart Link (Cross-Device Synchronized)
+            </span>
+          )}
+        </div>
+
         {/* QR Code Card */}
         <div className="flex flex-col items-center justify-center p-4 sm:p-6 rounded-2xl bg-white text-slate-900 shadow-xl mb-5 sm:mb-6 mx-auto max-w-full">
           <QRCodeSVG
-            value={publicUrl}
+            value={effectiveShareUrl}
             size={160}
             level="H"
             includeMargin={true}
@@ -99,7 +122,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           <input
             type="text"
             readOnly
-            value={publicUrl}
+            value={effectiveShareUrl}
             className="bg-transparent flex-1 px-2 text-xs text-slate-200 outline-none select-all truncate py-1 sm:py-0 font-mono"
           />
           <button
