@@ -1,8 +1,17 @@
 -- ==============================================================================
 -- Birthday Magic — Production Database Schema & Security Policies (Supabase)
 -- ==============================================================================
+--
+-- INSTRUCTIONS FOR DEPLOYMENT:
+-- 1. Open your Supabase Dashboard: https://supabase.com/dashboard
+-- 2. Select your project and navigate to the "SQL Editor" tab.
+-- 3. Paste and run this script. It is completely idempotent and safe to rerun.
+-- 4. Never use the "service_role" secret key in client-side code or Vite env vars!
+--    Only use the public "anon" / "publishable" key.
+--
+-- ==============================================================================
 
--- 1. Create birthday_pages table
+-- 1. Create birthday_pages table (Preserves existing table and all stored rows)
 CREATE TABLE IF NOT EXISTS public.birthday_pages (
     id TEXT PRIMARY KEY,
     slug TEXT UNIQUE NOT NULL,
@@ -14,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.birthday_pages (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- If table already existed without user_id, add it safely
+-- Safely add user_id column if table already existed without it
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -33,10 +42,10 @@ CREATE INDEX IF NOT EXISTS idx_birthday_pages_user_id ON public.birthday_pages(u
 CREATE INDEX IF NOT EXISTS idx_birthday_pages_published ON public.birthday_pages(is_published);
 CREATE INDEX IF NOT EXISTS idx_birthday_pages_updated_at ON public.birthday_pages(updated_at DESC);
 
--- 3. Enable Row Level Security (RLS)
+-- 3. Enable Row Level Security (RLS) on birthday_pages
 ALTER TABLE public.birthday_pages ENABLE ROW LEVEL SECURITY;
 
--- Clean up any existing legacy policies
+-- Clean up any existing policies before re-creating (ensures idempotent rerun)
 DROP POLICY IF EXISTS "Public read access for published birthday pages" ON public.birthday_pages;
 DROP POLICY IF EXISTS "Allow creator inserts and updates" ON public.birthday_pages;
 DROP POLICY IF EXISTS "Published pages are publicly readable or owner can read own drafts" ON public.birthday_pages;
@@ -46,7 +55,7 @@ DROP POLICY IF EXISTS "Users can delete their own birthday pages" ON public.birt
 
 -- 4. Secure RLS Policies for birthday_pages:
 
--- (A) SELECT: Anyone can view published pages. Owners can view their own pages (both drafts and published).
+-- (A) SELECT: Anyone can view published pages. Authenticated owners can read their own drafts and published pages.
 CREATE POLICY "Published pages are publicly readable or owner can read own drafts"
 ON public.birthday_pages
 FOR SELECT
@@ -55,7 +64,7 @@ USING (
     OR (auth.uid() IS NOT NULL AND auth.uid() = user_id)
 );
 
--- (B) INSERT: Authenticated users can insert their own pages.
+-- (B) INSERT: Authenticated users can only insert pages they own.
 CREATE POLICY "Authenticated users can create their own birthday pages"
 ON public.birthday_pages
 FOR INSERT
@@ -92,15 +101,20 @@ VALUES (
     52428800, -- 50MB maximum file size limit
     ARRAY[
         'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml',
-        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/m4a', 'audio/x-m4a', 'audio/ogg', 'audio/aac', 'audio/webm', 'audio/flac',
+        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/m4a', 'audio/x-m4a', 'audio/ogg', 'audio/aac', 'audio/webm', 'audio/webm;codecs=opus', 'audio/flac',
         'video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'video/ogg'
     ]::text[]
 )
 ON CONFLICT (id) DO UPDATE SET 
     public = true,
-    file_size_limit = 52428800;
+    file_size_limit = 52428800,
+    allowed_mime_types = ARRAY[
+        'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml',
+        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/m4a', 'audio/x-m4a', 'audio/ogg', 'audio/aac', 'audio/webm', 'audio/webm;codecs=opus', 'audio/flac',
+        'video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'video/ogg'
+    ]::text[];
 
--- Clean up any existing storage policies
+-- Clean up any existing storage policies before re-creating
 DROP POLICY IF EXISTS "Public Access for birthday media" ON storage.objects;
 DROP POLICY IF EXISTS "Allow public uploads for birthday media" ON storage.objects;
 DROP POLICY IF EXISTS "Allow public updates for birthday media" ON storage.objects;
@@ -115,24 +129,36 @@ ON storage.objects
 FOR SELECT
 USING (bucket_id = 'birthday-media');
 
--- (B) INSERT: Only authenticated users can upload media
+-- (B) INSERT: Authenticated users can only upload media inside their own user-ID folder
 CREATE POLICY "Authenticated users can upload birthday media"
 ON storage.objects
 FOR INSERT
 TO authenticated
-WITH CHECK (bucket_id = 'birthday-media');
+WITH CHECK (
+    bucket_id = 'birthday-media'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+);
 
--- (C) UPDATE: Authenticated users can update media they uploaded
+-- (C) UPDATE: Authenticated users can only update media inside their own user-ID folder
 CREATE POLICY "Authenticated users can update birthday media"
 ON storage.objects
 FOR UPDATE
 TO authenticated
-USING (bucket_id = 'birthday-media' AND (auth.uid()::text = (storage.foldername(name))[1] OR auth.role() = 'authenticated'))
-WITH CHECK (bucket_id = 'birthday-media');
+USING (
+    bucket_id = 'birthday-media'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+)
+WITH CHECK (
+    bucket_id = 'birthday-media'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+);
 
--- (D) DELETE: Authenticated users can delete media they uploaded
+-- (D) DELETE: Authenticated users can only delete media inside their own user-ID folder
 CREATE POLICY "Authenticated users can delete birthday media"
 ON storage.objects
 FOR DELETE
 TO authenticated
-USING (bucket_id = 'birthday-media' AND (auth.uid()::text = (storage.foldername(name))[1] OR auth.role() = 'authenticated'));
+USING (
+    bucket_id = 'birthday-media'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+);

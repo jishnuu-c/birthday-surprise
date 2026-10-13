@@ -6,7 +6,13 @@ import {
   getAllPages,
   generateShareableDataUrl 
 } from '../lib/storage';
-import { uploadRemoteMedia, isSupabaseConfigured } from '../lib/supabase';
+import { 
+  uploadRemoteMedia, 
+  isSupabaseConfigured,
+  isServiceRoleKey,
+  isAnonOrPublishableKey,
+  getSupabaseConfigError
+} from '../lib/supabase';
 import { BirthdayPageConfig } from '../types';
 
 describe('Birthday Page Storage & Data Integrity', () => {
@@ -99,5 +105,57 @@ describe('Media Validation & Security Rules', () => {
 
   it('enforces secure configuration check when credentials are missing or placeholder', () => {
     expect(typeof isSupabaseConfigured).toBe('boolean');
+  });
+
+  it('detects and strictly rejects service-role keys', () => {
+    // 1. Modern secret key format
+    expect(isServiceRoleKey('sb_secret_9999_fake_secret_key')).toBe(true);
+
+    // 2. Keyword check
+    expect(isServiceRoleKey('my_secret_service_role_key_value')).toBe(true);
+
+    // 3. Fake JWT with role: "service_role"
+    const fakeServiceJwtPayload = btoa(JSON.stringify({ role: 'service_role', exp: 9999999999 }));
+    const fakeServiceJwt = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${fakeServiceJwtPayload}.signature`;
+    expect(isServiceRoleKey(fakeServiceJwt)).toBe(true);
+
+    // 4. Must not be accepted as an anon key
+    expect(isAnonOrPublishableKey('sb_secret_9999')).toBe(false);
+    expect(isAnonOrPublishableKey(fakeServiceJwt)).toBe(false);
+  });
+
+  it('accepts valid publishable and anon keys', () => {
+    // 1. Modern publishable key format
+    expect(isAnonOrPublishableKey('sb_publishable_N-D4agXYIn98PMG9w5Ljgg_kam3ly23')).toBe(true);
+    expect(isServiceRoleKey('sb_publishable_N-D4agXYIn98PMG9w5Ljgg_kam3ly23')).toBe(false);
+
+    // 2. Legacy JWT with role: "anon"
+    const fakeAnonJwtPayload = btoa(JSON.stringify({ role: 'anon', exp: 9999999999 }));
+    const fakeAnonJwt = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${fakeAnonJwtPayload}.signature`;
+    expect(isAnonOrPublishableKey(fakeAnonJwt)).toBe(true);
+    expect(isServiceRoleKey(fakeAnonJwt)).toBe(false);
+  });
+
+  it('produces clear descriptive error messages for missing or invalid environment variables', () => {
+    // Missing both
+    expect(getSupabaseConfigError('', '')).toContain('Missing Supabase configuration');
+
+    // Missing URL
+    expect(getSupabaseConfigError('', 'sb_publishable_123')).toContain('Missing Supabase URL');
+
+    // Invalid non-https URL
+    expect(getSupabaseConfigError('http://insecure.supabase.co', 'sb_publishable_123')).toContain('must start with "https://"');
+
+    // Placeholder URL
+    expect(getSupabaseConfigError('https://your-project.supabase.co', 'sb_publishable_123')).toContain('contains placeholder values');
+
+    // Missing Key
+    expect(getSupabaseConfigError('https://valid.supabase.co', '')).toContain('Missing Supabase API Key');
+
+    // Placeholder Key
+    expect(getSupabaseConfigError('https://valid.supabase.co', 'your-anon-key')).toContain('contains placeholder values');
+
+    // Service-role key error
+    expect(getSupabaseConfigError('https://valid.supabase.co', 'sb_secret_12345')).toContain('CRITICAL SECURITY ERROR');
   });
 });

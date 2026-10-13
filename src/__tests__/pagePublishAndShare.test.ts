@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { 
   createNewBirthdayPage, 
   savePage, 
@@ -6,17 +6,21 @@ import {
   resolvePageAsync,
   getPageById 
 } from '../lib/storage';
-import { 
-  ensurePersistentMedia, 
-  fetchRemoteBirthdayPage,
-  isSupabaseConfigured 
-} from '../lib/supabase';
+import * as supabaseModule from '../lib/supabase';
 import { DEFAULT_DEMO_CONFIG } from '../constants/presets';
 import { BirthdayPageConfig } from '../types';
 
 describe('Complete Birthday Page Editing, Persistence & Publishing', () => {
   beforeEach(() => {
     localStorage.clear();
+    // Mock saveRemoteBirthdayPage to return success so unit tests do not fail on unmigrated live database
+    vi.spyOn(supabaseModule, 'saveRemoteBirthdayPage').mockImplementation(async (cfg) => {
+      return { success: true, config: { ...cfg, updatedAt: new Date().toISOString() } };
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('saves complete edited page data including all customization settings', async () => {
@@ -106,6 +110,18 @@ describe('Complete Birthday Page Editing, Persistence & Publishing', () => {
     expect(publishResult.url).not.toContain('/b/sophia-25th');
     expect(publishResult.url).toMatch(/\/b\/michael-\d+/);
   });
+
+  it('reports a clear error when Supabase cloud save fails', async () => {
+    vi.spyOn(supabaseModule, 'saveRemoteBirthdayPage').mockResolvedValueOnce({
+      success: false,
+      error: "Could not find the table 'public.birthday_pages' in the schema cache. Please execute schema.sql in Supabase SQL editor."
+    });
+
+    const page = createNewBirthdayPage('ErrorTest');
+    const result = await savePage(page);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('birthday_pages');
+  });
 });
 
 describe('Public Route Resolution & Isolation (Requirement 5)', () => {
@@ -113,7 +129,13 @@ describe('Public Route Resolution & Isolation (Requirement 5)', () => {
     localStorage.clear();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('does NOT load DEFAULT_DEMO_CONFIG or arbitrary localStorage for public share links when not found', async () => {
+    vi.spyOn(supabaseModule, 'fetchRemoteBirthdayPage').mockResolvedValue(null);
+
     // Save a page locally
     const secretDraft = createNewBirthdayPage('Secret Draft');
     secretDraft.slug = 'my-secret-draft';
@@ -125,14 +147,28 @@ describe('Public Route Resolution & Isolation (Requirement 5)', () => {
     // Must return null, NOT DEFAULT_DEMO_CONFIG and NOT local storage data
     expect(resolvedUnknown).toBeNull();
 
-    // Even if query matches a local draft, public view must NOT leak it from localStorage if allowLocalFallback: false
-    if (!isSupabaseConfigured) {
-      const resolvedDraft = await resolvePageAsync('my-secret-draft', { allowLocalFallback: false });
-      expect(resolvedDraft).toBeNull();
-    }
+    // Even if query matches a local draft, public view must NOT leak it from localStorage when allowLocalFallback: false
+    const resolvedDraft = await resolvePageAsync('my-secret-draft', { allowLocalFallback: false });
+    expect(resolvedDraft).toBeNull();
+  });
+
+  it('loads exact published configuration when remote database returns it', async () => {
+    const publishedPage = createNewBirthdayPage('Remote Star');
+    publishedPage.slug = 'remote-star-2026';
+    publishedPage.isPublished = true;
+    publishedPage.pageTitle = 'Remote Published Surprise ✨';
+
+    vi.spyOn(supabaseModule, 'fetchRemoteBirthdayPage').mockResolvedValueOnce(publishedPage);
+
+    const resolved = await resolvePageAsync('remote-star-2026', { allowLocalFallback: false });
+    expect(resolved).not.toBeNull();
+    expect(resolved?.recipientName).toBe('Remote Star');
+    expect(resolved?.pageTitle).toBe('Remote Published Surprise ✨');
   });
 
   it('allows local fallback only when explicitly enabled for creator editor studio', async () => {
+    vi.spyOn(supabaseModule, 'fetchRemoteBirthdayPage').mockResolvedValue(null);
+
     const creatorDraft = createNewBirthdayPage('Local Editor Draft');
     creatorDraft.slug = 'editor-local-slug';
     await savePage(creatorDraft);
@@ -151,13 +187,12 @@ describe('Media Persistence & Blob Protection (Requirement 9)', () => {
     pageWithBlobs.videoUrl = 'blob:http://localhost:5173/temp-video-uuid';
 
     // ensurePersistentMedia validates that local blobs are uploaded or flagged
-    const result = await ensurePersistentMedia(pageWithBlobs);
-    if (!isSupabaseConfigured) {
-      // In unconfigured environment, config remains untouched
-      expect(result.config).toBeDefined();
-    } else {
-      // If cloud is configured but blob cannot be resolved from fetch, it reports a clear error
+    const result = await supabaseModule.ensurePersistentMedia(pageWithBlobs);
+    // When cloud is configured but blob cannot be resolved from fetch, it reports a clear error
+    if (supabaseModule.isSupabaseConfigured) {
       expect(result.error).toBeDefined();
+    } else {
+      expect(result.config).toBeDefined();
     }
   });
 
@@ -169,7 +204,7 @@ describe('Media Persistence & Blob Protection (Requirement 9)', () => {
     pageWithCloudMedia.profilePhotoUrl = persistentImageUrl;
     pageWithCloudMedia.videoUrl = persistentVideoUrl;
 
-    const result = await ensurePersistentMedia(pageWithCloudMedia);
+    const result = await supabaseModule.ensurePersistentMedia(pageWithCloudMedia);
     expect(result.config.profilePhotoUrl).toBe(persistentImageUrl);
     expect(result.config.videoUrl).toBe(persistentVideoUrl);
     expect(result.error).toBeUndefined();

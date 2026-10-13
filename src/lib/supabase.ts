@@ -5,15 +5,125 @@ import { getMediaRecord } from './mediaDb';
 const rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const rawKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
-export const isSupabaseConfigured = Boolean(
-  rawUrl &&
-  rawKey &&
-  !rawUrl.includes('your-project') &&
-  !rawUrl.includes('placeholder') &&
-  !rawKey.includes('your-anon-key') &&
-  !rawKey.includes('placeholder') &&
-  rawUrl.startsWith('https://')
-);
+function decodeBase64(str: string): string {
+  if (typeof globalThis !== 'undefined' && typeof globalThis.atob === 'function') {
+    try {
+      return globalThis.atob(str);
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
+/**
+ * Checks whether a key is a Supabase service-role or secret key.
+ * Service-role keys bypass all Row Level Security and must NEVER be used in frontend code!
+ */
+export function isServiceRoleKey(key: string): boolean {
+  if (!key) return false;
+  const trimmed = key.trim();
+
+  // 1. New Supabase secret key prefix
+  if (trimmed.startsWith('sb_secret_')) return true;
+
+  // 2. Direct keyword check
+  const lower = trimmed.toLowerCase();
+  if (lower.includes('service_role') || lower.includes('secret_key')) return true;
+
+  // 3. JWT payload inspection (legacy format)
+  if (trimmed.startsWith('eyJ')) {
+    try {
+      const parts = trimmed.split('.');
+      if (parts.length >= 2) {
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const json = decodeBase64(base64);
+        if (json) {
+          const payload = JSON.parse(json);
+          if (payload && (payload.role === 'service_role' || payload.role === 'supabase_admin')) {
+            return true;
+          }
+        }
+      }
+    } catch {
+      // ignore parsing failure
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Validates that a key is a public publishable or anonymous key.
+ */
+export function isAnonOrPublishableKey(key: string): boolean {
+  if (!key) return false;
+  const trimmed = key.trim();
+  if (isServiceRoleKey(trimmed)) return false;
+  if (trimmed.startsWith('sb_publishable_')) return true;
+  if (trimmed.startsWith('eyJ')) {
+    try {
+      const parts = trimmed.split('.');
+      if (parts.length >= 2) {
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const json = decodeBase64(base64);
+        if (json) {
+          const payload = JSON.parse(json);
+          if (payload && payload.role === 'anon') {
+            return true;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Validates Supabase configuration and returns a clear descriptive error message if invalid or missing.
+ */
+export function getSupabaseConfigError(url = rawUrl, key = rawKey): string | null {
+  const trimmedUrl = (url || '').trim();
+  const trimmedKey = (key || '').trim();
+
+  if (!trimmedUrl && !trimmedKey) {
+    return 'Missing Supabase configuration: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are not set in .env or Vercel environment variables.';
+  }
+  if (!trimmedUrl) {
+    return 'Missing Supabase URL: VITE_SUPABASE_URL is not set. Please provide your Supabase project URL (e.g. https://your-project.supabase.co).';
+  }
+  if (!trimmedUrl.startsWith('https://')) {
+    return 'Invalid Supabase URL: VITE_SUPABASE_URL must start with "https://".';
+  }
+  if (trimmedUrl.includes('your-project') || trimmedUrl.includes('placeholder')) {
+    return 'Placeholder Supabase URL: VITE_SUPABASE_URL contains placeholder values. Please replace it with your actual project URL.';
+  }
+  if (!trimmedKey) {
+    return 'Missing Supabase API Key: VITE_SUPABASE_ANON_KEY is not set. Please provide your public anon or publishable key.';
+  }
+  if (trimmedKey.includes('your-anon-key') || trimmedKey.includes('placeholder')) {
+    return 'Placeholder Supabase API Key: VITE_SUPABASE_ANON_KEY contains placeholder values. Please replace it with your actual anon or publishable key.';
+  }
+  if (isServiceRoleKey(trimmedKey)) {
+    return 'CRITICAL SECURITY ERROR: VITE_SUPABASE_ANON_KEY is configured with a service-role or secret key. Service-role keys bypass all Row Level Security and must NEVER be exposed in client applications! Replace it with your public anon or publishable key (e.g. sb_publishable_... or anon JWT).';
+  }
+  return null;
+}
+
+export const supabaseConfigError = getSupabaseConfigError();
+export const isSupabaseConfigured = !supabaseConfigError;
+
+// Log helpful security or diagnostic warnings
+if (supabaseConfigError) {
+  if (isServiceRoleKey(rawKey)) {
+    console.error(`🚨 [Supabase Security Alert] ${supabaseConfigError}`);
+  } else if (rawUrl || rawKey) {
+    console.warn(`⚠️ [Supabase Configuration Notice] ${supabaseConfigError}`);
+  }
+}
 
 export const supabase = isSupabaseConfigured
   ? createClient(rawUrl, rawKey, {
@@ -286,7 +396,7 @@ export async function saveRemoteBirthdayPage(
   config: BirthdayPageConfig
 ): Promise<{ success: boolean; error?: string; config?: BirthdayPageConfig }> {
   if (!supabase) {
-    return { success: false, error: 'Supabase credentials not configured' };
+    return { success: false, error: supabaseConfigError || 'Supabase credentials not configured' };
   }
 
   try {
@@ -420,7 +530,7 @@ export async function uploadRemoteMedia(
   }
 
   if (!supabase) {
-    return { url: null, error: 'Supabase not configured' };
+    return { url: null, error: supabaseConfigError || 'Supabase not configured' };
   }
 
   try {
