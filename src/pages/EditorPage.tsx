@@ -34,9 +34,7 @@ export const EditorPage: React.FC = () => {
   
   // View mode state: on mobile default to 'editor-only', desktop default to 'split'
   const [viewMode, setViewMode] = useState<'split' | 'editor-only' | 'preview-only'>('split');
-  const autoSaveTimerRef = useRef<number | null>(null);
   const isSavingRef = useRef<boolean>(false);
-  const queuedSaveRef = useRef<boolean>(false);
   const lastSavedConfigRef = useRef<BirthdayPageConfig>(config);
   const latestConfigRef = useRef<BirthdayPageConfig>(config);
   const userRef = useRef(user);
@@ -120,33 +118,35 @@ export const EditorPage: React.FC = () => {
     };
   }, [id, navigate]);
 
-  // Unified save action with verified feedback, dirty-checking, and queueing
+  // Explicit save action: persists data to Supabase ONLY on user manual action
+  // Autosave is completely disabled. Duplicate requests from repeated clicks are blocked.
   const executeSavePipeline = useCallback(async (customConfig?: BirthdayPageConfig) => {
     if (customConfig) {
       latestConfigRef.current = customConfig;
     }
 
-    // Requirement 2 & 4: Prevent duplicate and overlapping save requests
-    // If a save is already in progress, queue the latest changes to be saved once the active save completes
+    // Requirement 4: Prevent duplicate requests when Save button is clicked multiple times
     if (isSavingRef.current) {
-      queuedSaveRef.current = true;
       return;
     }
 
     const target = latestConfigRef.current;
 
-    // Requirement 3 & 6: Save only when data has actually changed from the last successfully saved version
+    // Check if data actually has unsaved changes compared to last saved snapshot
     if (lastSavedConfigRef.current && areConfigsEqual(target, lastSavedConfigRef.current)) {
       setHasUnsavedChanges(false);
+      setSaveStatus('saved');
+      setSaveMessage('Saved successfully!');
+      setTimeout(() => {
+        setSaveStatus((s) => s === 'saved' ? 'idle' : s);
+        setSaveMessage(null);
+      }, 2500);
       return;
     }
 
     isSavingRef.current = true;
-    queuedSaveRef.current = false;
     setSaveStatus('saving');
     setSaveMessage(null);
-
-    let saveSucceeded = false;
 
     try {
       const configToSave = {
@@ -160,7 +160,6 @@ export const EditorPage: React.FC = () => {
 
       const res = await savePage(configToSave);
       if (res.success) {
-        saveSucceeded = true;
         const savedConfig = res.config || configToSave;
         lastSavedConfigRef.current = savedConfig;
         latestConfigRef.current = {
@@ -178,14 +177,15 @@ export const EditorPage: React.FC = () => {
           updatedAt: savedConfig.updatedAt
         }));
 
-        // If the ID was updated (e.g. forked from another user's page to avoid RLS violation), update URL
+        // If page ID changed (e.g. forked from another user's page to avoid RLS violation), update URL
         if (savedConfig.id !== id) {
           navigate(`/editor/${savedConfig.id}`, { replace: true });
         }
 
+        // Requirement 7: Show "Saved successfully" only after Supabase confirms the save
         setSaveStatus('saved');
         setHasUnsavedChanges(false);
-        setSaveMessage('All changes saved successfully!');
+        setSaveMessage('Saved successfully!');
         setTimeout(() => {
           setSaveStatus((s) => s === 'saved' ? 'idle' : s);
           setSaveMessage(null);
@@ -201,71 +201,37 @@ export const EditorPage: React.FC = () => {
       setSaveMessage(msg);
     } finally {
       isSavingRef.current = false;
-      // Requirement 2 & 4: Only process queued save if new changes were made while in-flight
-      // Never loop-retry infinitely on error to avoid 429 rate limits
-      if (queuedSaveRef.current && saveSucceeded) {
-        queuedSaveRef.current = false;
-        if (latestConfigRef.current && !areConfigsEqual(latestConfigRef.current, lastSavedConfigRef.current)) {
-          window.setTimeout(() => {
-            executeSavePipeline();
-          }, 300);
-        }
-      } else {
-        queuedSaveRef.current = false;
-      }
     }
   }, [id, navigate]);
 
   const handleExplicitSave = useCallback((customConfig?: BirthdayPageConfig) => {
     // Prevent duplicate requests from repeated button clicks while save is in flight
     if (isSavingRef.current) return;
-    if (autoSaveTimerRef.current) {
-      window.clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
     executeSavePipeline(customConfig);
   }, [executeSavePipeline]);
 
   // Handle configuration updates from child components:
-  // - Requirement 1: 1.5-second debounce after the user stops editing
-  // - Requirement 2: Do not send a save request for every keystroke
-  // - Requirement 3: Save only when data has actually changed
-  // - Requirement 5: Applies to text, recipient name, messages, theme settings, and sections
+  // - Requirement 1: Autosave completely disabled. Zero automatic network requests.
+  // - Requirement 6: Keep unsaved changes in editor state and local storage until explicitly saved.
+  // - Requirement 7: Marks hasUnsavedChanges = true to show the Unsaved changes indicator.
   const handleUpdateConfig = useCallback((updated: Partial<BirthdayPageConfig>) => {
     setConfig((prev) => {
-      const merged = { ...prev, ...updated, updatedAt: new Date().toISOString() };
+      const merged = { ...prev, ...updated };
       latestConfigRef.current = merged;
 
-      // Check if actual content changed from last saved version
+      // Track if content differs from last successfully saved snapshot
       const hasActualChanges = !areConfigsEqual(merged, lastSavedConfigRef.current);
       setHasUnsavedChanges(hasActualChanges);
 
-      // Instant local persistence (0 network calls, guarantees local state safety)
+      // Local storage persistence for crash safety without sending any Supabase network request
       savePageLocally(merged);
-
-      // Reset debounce timer on every keystroke/edit
-      if (autoSaveTimerRef.current) {
-        window.clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-
-      // If data matches saved version, no cloud request needed
-      if (!hasActualChanges) {
-        return merged;
-      }
-
-      // Requirement 1: 1.5-second (1500ms) debounce after user stops editing before saving changes
-      autoSaveTimerRef.current = window.setTimeout(() => {
-        executeSavePipeline();
-      }, 1500);
 
       return merged;
     });
-  }, [executeSavePipeline]);
+  }, []);
 
-  // Requirement 9: Safe flush strategy so latest edits are not lost when navigating away
+  // Safe local backup on tab close or refresh (0 network requests)
   useEffect(() => {
-    // 1. Browser tab close or refresh
     const handleBeforeUnload = () => {
       if (latestConfigRef.current) {
         savePageLocally(latestConfigRef.current);
@@ -276,22 +242,6 @@ export const EditorPage: React.FC = () => {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      // 2. React SPA unmount (navigating to dashboard, preview, or another route)
-      if (autoSaveTimerRef.current) {
-        window.clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-      if (latestConfigRef.current) {
-        savePageLocally(latestConfigRef.current);
-        // Flush cloud save if unsaved changes remain and not currently in-flight
-        if (
-          lastSavedConfigRef.current &&
-          !areConfigsEqual(latestConfigRef.current, lastSavedConfigRef.current) &&
-          !isSavingRef.current
-        ) {
-          savePage(latestConfigRef.current).catch(() => {});
-        }
-      }
     };
   }, []);
 
@@ -328,30 +278,30 @@ export const EditorPage: React.FC = () => {
 
             <span className="text-slate-600 hidden sm:inline">|</span>
 
-            {/* Save Status Badge (Requirement 7: subtle Saving..., Saved, or Save failed status) */}
+            {/* Save Status Badge (Requirement 7: clear Unsaved changes and Saved successfully indicators) */}
             <div className="flex items-center gap-1.5 text-xs shrink-0 font-medium" aria-live="polite">
               {saveStatus === 'saving' && (
-                <span className="flex items-center gap-1.5 text-amber-400 animate-pulse">
-                  <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+                <span className="flex items-center gap-1.5 text-amber-400 animate-pulse font-medium">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
                   <span>Saving…</span>
                 </span>
               )}
               {saveStatus === 'saved' && (
-                <span className="flex items-center gap-1.5 text-emerald-400 animate-in fade-in">
+                <span className="flex items-center gap-1.5 text-emerald-400 font-semibold animate-in fade-in px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                  <span>Saved</span>
+                  <span>Saved successfully</span>
                 </span>
               )}
               {saveStatus === 'error' && (
-                <span className="flex items-center gap-1.5 text-rose-400" title={saveMessage || 'Save failed'}>
+                <span className="flex items-center gap-1.5 text-rose-400 font-medium px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30" title={saveMessage || 'Save failed'}>
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                   <span>Save failed</span>
                 </span>
               )}
               {saveStatus === 'idle' && (
                 hasUnsavedChanges ? (
-                  <span className="text-amber-300/90 text-[11px] flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0" />
+                  <span className="text-amber-300 font-semibold text-xs flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
                     <span>Unsaved changes</span>
                   </span>
                 ) : (
@@ -385,7 +335,7 @@ export const EditorPage: React.FC = () => {
                 <Save className="w-3.5 h-3.5" />
               )}
               <span>
-                {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : 'Save Changes'}
+                {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved successfully!' : 'Save Changes'}
               </span>
             </button>
 
