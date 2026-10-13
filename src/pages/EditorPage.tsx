@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { BirthdayPageConfig } from '../types';
 import { getPageById, resolvePageAsync, savePage, savePageLocally, createNewBirthdayPage, areConfigsEqual } from '../lib/storage';
+import { isSupabaseConfigured } from '../lib/supabase';
 import { DEFAULT_DEMO_CONFIG } from '../constants/presets';
 import { useAuth } from '../context/AuthContext';
 import { Navbar } from '../components/common/Navbar';
@@ -35,6 +36,7 @@ export const EditorPage: React.FC = () => {
   // View mode state: on mobile default to 'editor-only', desktop default to 'split'
   const [viewMode, setViewMode] = useState<'split' | 'editor-only' | 'preview-only'>('split');
   const isSavingRef = useRef<boolean>(false);
+  const isCloudPersistedRef = useRef<boolean>(false);
   const lastSavedConfigRef = useRef<BirthdayPageConfig>(config);
   const latestConfigRef = useRef<BirthdayPageConfig>(config);
   const userRef = useRef(user);
@@ -50,6 +52,7 @@ export const EditorPage: React.FC = () => {
         const created = createNewBirthdayPage('Best Friend');
         if (userRef.current) created.userId = userRef.current.id;
         if (isMounted) {
+          isCloudPersistedRef.current = false;
           setConfig(created);
           lastSavedConfigRef.current = created;
           latestConfigRef.current = created;
@@ -72,6 +75,7 @@ export const EditorPage: React.FC = () => {
         };
         savePageLocally(forked);
         if (isMounted) {
+          isCloudPersistedRef.current = false;
           setConfig(forked);
           lastSavedConfigRef.current = forked;
           latestConfigRef.current = forked;
@@ -95,6 +99,7 @@ export const EditorPage: React.FC = () => {
       const resolved = await resolvePageAsync(id, { allowLocalFallback: true });
       if (isMounted) {
         if (resolved) {
+          isCloudPersistedRef.current = isSupabaseConfigured && Boolean(resolved.id);
           setConfig(resolved);
           lastSavedConfigRef.current = resolved;
           latestConfigRef.current = resolved;
@@ -102,6 +107,7 @@ export const EditorPage: React.FC = () => {
           const created = createNewBirthdayPage('Best Friend');
           if (userRef.current) created.userId = userRef.current.id;
           savePageLocally(created);
+          isCloudPersistedRef.current = false;
           setConfig(created);
           lastSavedConfigRef.current = created;
           latestConfigRef.current = created;
@@ -133,7 +139,8 @@ export const EditorPage: React.FC = () => {
     const target = latestConfigRef.current;
 
     // Check if data actually has unsaved changes compared to last saved snapshot
-    if (lastSavedConfigRef.current && areConfigsEqual(target, lastSavedConfigRef.current)) {
+    // But NEVER skip if the page has not yet been persisted to the cloud database!
+    if (isCloudPersistedRef.current && lastSavedConfigRef.current && areConfigsEqual(target, lastSavedConfigRef.current)) {
       setHasUnsavedChanges(false);
       setSaveStatus('saved');
       setSaveMessage('Saved successfully!');
@@ -160,6 +167,7 @@ export const EditorPage: React.FC = () => {
 
       const res = await savePage(configToSave);
       if (res.success) {
+        isCloudPersistedRef.current = isSupabaseConfigured;
         const savedConfig = res.config || configToSave;
         lastSavedConfigRef.current = savedConfig;
         latestConfigRef.current = savedConfig;
@@ -377,21 +385,28 @@ export const EditorPage: React.FC = () => {
               </button>
             </div>
 
-            {/* Quick Open Live Page */}
-            <a
-              href={publicUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`px-3 sm:px-3.5 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                config.isPublished
-                  ? 'bg-pink-500/15 hover:bg-pink-500/25 border-pink-500/40 text-pink-300'
-                  : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300'
-              }`}
-              title={config.isPublished ? "Open live page in new tab" : "Preview draft link (Draft mode - not yet published to public)"}
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{config.isPublished ? 'Open Live Link' : 'Draft Link'}</span>
-            </a>
+            {/* Quick Open Live Page or Publish to Share */}
+            {config.isPublished ? (
+              <a
+                href={publicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 sm:px-3.5 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer bg-pink-500/15 hover:bg-pink-500/25 border-pink-500/40 text-pink-300"
+                title="Open live published page in new tab"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Open Live Link</span>
+              </a>
+            ) : (
+              <button
+                onClick={() => setActiveTab('publish')}
+                className="px-3 sm:px-3.5 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300"
+                title="Draft Mode — Click to publish and generate your shareable birthday link"
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Publish to Share</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -466,6 +481,7 @@ export const EditorPage: React.FC = () => {
                     config={config}
                     onUpdateConfig={handleUpdateConfig}
                     onPublishSuccess={(publishedConfig) => {
+                      isCloudPersistedRef.current = true;
                       lastSavedConfigRef.current = publishedConfig;
                       latestConfigRef.current = publishedConfig;
                       setConfig(publishedConfig);
@@ -501,6 +517,22 @@ export const EditorPage: React.FC = () => {
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         publicUrl={publicUrl}
+        onPublishSuccess={(publishedConfig) => {
+          isCloudPersistedRef.current = true;
+          lastSavedConfigRef.current = publishedConfig;
+          latestConfigRef.current = publishedConfig;
+          setConfig(publishedConfig);
+          setHasUnsavedChanges(false);
+          setSaveStatus('saved');
+          setSaveMessage('Surprise published successfully to cloud!');
+          setTimeout(() => {
+            setSaveStatus((s) => s === 'saved' ? 'idle' : s);
+            setSaveMessage(null);
+          }, 3000);
+          if (publishedConfig.id !== id) {
+            navigate(`/editor/${publishedConfig.id}`, { replace: true });
+          }
+        }}
       />
     </div>
   );

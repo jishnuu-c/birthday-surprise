@@ -4,6 +4,7 @@ import {
   savePage, 
   saveAndPublishPage, 
   resolvePageAsync,
+  resolvePageDetailsAsync,
   getPageById 
 } from '../lib/storage';
 import * as supabaseModule from '../lib/supabase';
@@ -177,6 +178,43 @@ describe('Public Route Resolution & Isolation (Requirement 5)', () => {
     const resolvedInStudio = await resolvePageAsync(creatorDraft.id, { allowLocalFallback: true });
     expect(resolvedInStudio).not.toBeNull();
     expect(resolvedInStudio?.recipientName).toBe('Local Editor Draft');
+  });
+
+  it('distinguishes between unpublished draft, error, and not_found (Requirement 8)', async () => {
+    // 1. Unpublished page in cloud
+    const unpublishedDraft = createNewBirthdayPage('Unpublished Creator');
+    unpublishedDraft.slug = 'draft-slug-123';
+    unpublishedDraft.isPublished = false;
+
+    vi.spyOn(supabaseModule, 'fetchRemoteBirthdayPage').mockResolvedValue(unpublishedDraft);
+    vi.spyOn(supabaseModule, 'fetchRemoteBirthdayPageDetailed').mockResolvedValue({
+      config: unpublishedDraft,
+      status: 'unpublished'
+    });
+
+    const unpubResult = await resolvePageDetailsAsync('draft-slug-123', { allowLocalFallback: false });
+    expect(unpubResult.status).toBe('unpublished');
+
+    // 2. Database/network error
+    vi.spyOn(supabaseModule, 'fetchRemoteBirthdayPage').mockResolvedValue(null);
+    vi.spyOn(supabaseModule, 'fetchRemoteBirthdayPageDetailed').mockResolvedValue({
+      config: null,
+      status: 'error',
+      error: 'Supabase network timeout'
+    });
+
+    const errorResult = await resolvePageDetailsAsync('failing-slug', { allowLocalFallback: false });
+    expect(errorResult.status).toBe('error');
+    expect(errorResult.error).toContain('Supabase network timeout');
+
+    // 3. Truly not found
+    vi.spyOn(supabaseModule, 'fetchRemoteBirthdayPageDetailed').mockResolvedValue({
+      config: null,
+      status: 'not_found'
+    });
+
+    const notFoundResult = await resolvePageDetailsAsync('non-existent-123', { allowLocalFallback: false });
+    expect(notFoundResult.status).toBe('not_found');
   });
 });
 

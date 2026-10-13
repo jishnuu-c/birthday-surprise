@@ -689,6 +689,16 @@ export async function saveRemoteBirthdayPage(
       : null;
 
     let error: { message: string; code?: string } | null = null;
+    interface SavedBirthdayRow {
+      id: string;
+      slug: string;
+      is_published: boolean;
+      user_id: string;
+      config: unknown;
+      recipient_name: string;
+      updated_at: string;
+    }
+    let savedRow: SavedBirthdayRow | null = null;
 
     if (existingPage) {
       // 1. EXISTING PAGE: Use UPDATE with the existing row ID
@@ -705,9 +715,12 @@ export async function saveRemoteBirthdayPage(
               config: cleanConfig,
               updated_at: cleanConfig.updatedAt
             })
-            .eq('id', existingPage.id);
+            .eq('id', existingPage.id)
+            .select('id, slug, is_published, user_id, config, recipient_name, updated_at')
+            .single();
         }, 2, 800);
         error = updateRes.error;
+        savedRow = (updateRes.data as unknown) as SavedBirthdayRow;
       } else {
         // Page exists but belongs to another user (e.g. opened shared link or different account)
         // Fork safely into a new page owned by current user to avoid 403 RLS violation
@@ -728,9 +741,12 @@ export async function saveRemoteBirthdayPage(
               config: cleanConfig,
               created_at: cleanConfig.createdAt || new Date().toISOString(),
               updated_at: cleanConfig.updatedAt
-            });
+            })
+            .select('id, slug, is_published, user_id, config, recipient_name, updated_at')
+            .single();
         }, 2, 800);
         error = insertRes.error;
+        savedRow = (insertRes.data as unknown) as SavedBirthdayRow;
       }
     } else {
       // 2. NEW PAGE: Use INSERT only when creating a new birthday page
@@ -746,9 +762,12 @@ export async function saveRemoteBirthdayPage(
             config: cleanConfig,
             created_at: cleanConfig.createdAt || new Date().toISOString(),
             updated_at: cleanConfig.updatedAt
-          });
+          })
+          .select('id, slug, is_published, user_id, config, recipient_name, updated_at')
+          .single();
       }, 2, 800);
       error = insertRes.error;
+      savedRow = (insertRes.data as unknown) as SavedBirthdayRow;
     }
 
     // Handle slug uniqueness constraint collision by appending unique suffix
@@ -767,9 +786,12 @@ export async function saveRemoteBirthdayPage(
               config: cleanConfig,
               updated_at: cleanConfig.updatedAt
             })
-            .eq('id', existingPage.id);
+            .eq('id', existingPage.id)
+            .select('id, slug, is_published, user_id, config, recipient_name, updated_at')
+            .single();
         }, 2, 800);
         error = retryUpdate.error;
+        savedRow = (retryUpdate.data as unknown) as SavedBirthdayRow;
       } else {
         const retryInsert = await withRateLimitRetry(async () => {
           return await supabase!
@@ -783,9 +805,12 @@ export async function saveRemoteBirthdayPage(
               config: cleanConfig,
               created_at: cleanConfig.createdAt || new Date().toISOString(),
               updated_at: cleanConfig.updatedAt
-            });
+            })
+            .select('id, slug, is_published, user_id, config, recipient_name, updated_at')
+            .single();
         }, 2, 800);
         error = retryInsert.error;
+        savedRow = (retryInsert.data as unknown) as SavedBirthdayRow;
       }
     }
 
@@ -793,6 +818,19 @@ export async function saveRemoteBirthdayPage(
       console.error('Supabase save error:', error);
       return { success: false, error: error.message };
     }
+
+    if (!savedRow) {
+      return { success: false, error: 'Database did not return a confirmed saved row.' };
+    }
+
+    // Requirement 4: Check actual database response after saving
+    // Verify slug, is_published, user_id, and config from the database row
+    cleanConfig.id = savedRow.id;
+    cleanConfig.slug = savedRow.slug;
+    cleanConfig.isPublished = savedRow.is_published;
+    cleanConfig.userId = savedRow.user_id;
+    cleanConfig.updatedAt = savedRow.updated_at;
+    cleanConfig.recipientName = savedRow.recipient_name || cleanConfig.recipientName;
 
     // Synchronize in-memory cache so subsequent reads do not trigger duplicate network queries
     const entry: CacheEntry = { config: cleanConfig, timestamp: Date.now() };

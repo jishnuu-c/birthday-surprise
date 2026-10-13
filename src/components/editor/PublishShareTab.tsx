@@ -229,71 +229,99 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
           </div>
         </div>
 
-        {/* Copy Primary URL */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-slate-950 p-2 rounded-xl border border-white/15">
-          <input
-            type="text"
-            readOnly
-            value={publishedUrl}
-            className="flex-1 bg-transparent px-2 text-xs text-slate-200 outline-none select-all truncate font-mono py-1 sm:py-0"
-          />
-          <div className="flex items-center gap-2 shrink-0">
+        {/* Public Sharing Controls — only active when published */}
+        {config.isPublished ? (
+          <>
+            {/* Copy Primary URL */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-slate-950 p-2 rounded-xl border border-white/15">
+              <input
+                type="text"
+                readOnly
+                value={publishedUrl}
+                className="flex-1 bg-transparent px-2 text-xs text-slate-200 outline-none select-all truncate font-mono py-1 sm:py-0"
+              />
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleCopyUrl}
+                  className="flex-1 sm:flex-none px-4 py-2 rounded-lg bg-pink-500 hover:bg-pink-600 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied ? 'Copied' : 'Copy URL'}</span>
+                </button>
+                <a
+                  href={publishedUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 transition-colors flex items-center justify-center"
+                  title="Open live page in new tab"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
+
+            {/* Instant WhatsApp Share Button */}
+            <div className="flex flex-wrap gap-2.5 pt-2">
+              <button
+                onClick={handleWhatsApp}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>Share directly on WhatsApp</span>
+              </button>
+
+              <button
+                onClick={handleCopyHashUrl}
+                className="px-4 py-2.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer"
+                title="Generates a zero-server portable URL containing full page data"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>{copiedHash ? 'Copied Portable URL!' : 'Copy Serverless Portable Link'}</span>
+              </button>
+            </div>
+          </>
+        ) : (
+          /* When NOT published: show clear draft warning and publish action */
+          <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-center space-y-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-300">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-white">Share Link Not Activated Yet</h4>
+              <p className="text-xs text-slate-300 mt-1 max-w-md mx-auto leading-relaxed">
+                This surprise page is currently an unpublished draft. Share links and QR codes are activated once published to the cloud so your recipient can open it anywhere.
+              </p>
+            </div>
             <button
-              onClick={handleCopyUrl}
-              className="flex-1 sm:flex-none px-4 py-2 rounded-lg bg-pink-500 hover:bg-pink-600 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              onClick={handlePublish}
+              disabled={isPublishing}
+              className="px-6 py-2.5 rounded-xl font-bold text-white text-xs bg-gradient-to-r from-pink-500 via-rose-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 shadow-lg cursor-pointer inline-flex items-center gap-2"
             >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copied' : 'Copy URL'}</span>
+              <Globe className="w-3.5 h-3.5" />
+              <span>{isPublishing ? 'Publishing...' : 'Publish Surprise Page Now'}</span>
             </button>
-            <a
-              href={publishedUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 transition-colors flex items-center justify-center"
-              title="Open live page in new tab"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </a>
           </div>
-        </div>
-
-        {/* Instant WhatsApp Share Button */}
-        <div className="flex flex-wrap gap-2.5 pt-2">
-          <button
-            onClick={handleWhatsApp}
-            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer"
-          >
-            <MessageCircle className="w-4 h-4" />
-            <span>Share directly on WhatsApp</span>
-          </button>
-
-          <button
-            onClick={handleCopyHashUrl}
-            className="px-4 py-2.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer"
-            title="Generates a zero-server portable URL containing full page data"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>{copiedHash ? 'Copied Portable URL!' : 'Copy Serverless Portable Link'}</span>
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* QR Code Section */}
-      <div className="glass-panel p-6 rounded-2xl border border-white/10 flex flex-col sm:flex-row items-center gap-6">
-        <div className="p-4 bg-white rounded-2xl shadow-xl">
-          <QRCodeSVG value={publishedUrl} size={150} level="H" includeMargin={true} />
-        </div>
-
-        <div className="space-y-3 text-center sm:text-left">
-          <div className="flex items-center gap-2 justify-center sm:justify-start text-sm font-bold text-slate-100">
-            <QrCode className="w-4 h-4 text-pink-400" />
-            <span>Printable & Scannable QR Code</span>
+      {/* QR Code Section — only active once published */}
+      {config.isPublished && (
+        <div className="glass-panel p-6 rounded-2xl border border-white/10 flex flex-col sm:flex-row items-center gap-6">
+          <div className="p-4 bg-white rounded-2xl shadow-xl">
+            <QRCodeSVG value={publishedUrl} size={150} level="H" includeMargin={true} />
           </div>
-          <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
-            You can print this QR code and paste it on physical birthday cards, cake boxes, or gift wrapping!
-          </p>
+
+          <div className="space-y-3 text-center sm:text-left">
+            <div className="flex items-center gap-2 justify-center sm:justify-start text-sm font-bold text-slate-100">
+              <QrCode className="w-4 h-4 text-pink-400" />
+              <span>Printable & Scannable QR Code</span>
+            </div>
+            <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
+              Print this QR code on a real physical greeting card or gift tag. When the birthday person scans it with their phone camera, their custom surprise page launches instantly!
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Cloud & Backup Settings */}
       <div className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4">
