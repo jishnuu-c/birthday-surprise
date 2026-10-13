@@ -169,7 +169,7 @@ export async function resolvePageAsync(
 export async function resolveLocalMediaUrls(config: BirthdayPageConfig): Promise<BirthdayPageConfig> {
   const copy = { ...config };
 
-  // 1. Audio resolution
+  // 1. Audio resolution: only check IndexedDB if URL is explicitly local (blob: or indexeddb:)
   if (copy.customAudioUrl) {
     if (copy.customAudioUrl.startsWith('indexeddb:')) {
       const key = copy.customAudioUrl.replace('indexeddb:', '');
@@ -178,23 +178,15 @@ export async function resolveLocalMediaUrls(config: BirthdayPageConfig): Promise
         copy.customAudioUrl = blobUrl;
       }
     } else if (copy.customAudioUrl.startsWith('blob:')) {
-      // Check if we have an indexeddb fallback for this page
       const fallbackKey = `audio-${copy.id}`;
       const blobUrl = await getMediaBlobUrl(fallbackKey);
       if (blobUrl) {
         copy.customAudioUrl = blobUrl;
       }
     }
-  } else {
-    // Check if indexeddb has an audio record for this page
-    const fallbackKey = `audio-${copy.id}`;
-    const blobUrl = await getMediaBlobUrl(fallbackKey);
-    if (blobUrl) {
-      copy.customAudioUrl = blobUrl;
-    }
   }
 
-  // 2. Video resolution
+  // 2. Video resolution: only check IndexedDB if URL is explicitly local
   if (copy.videoUrl) {
     if (copy.videoUrl.startsWith('indexeddb:')) {
       const key = copy.videoUrl.replace('indexeddb:', '');
@@ -209,12 +201,6 @@ export async function resolveLocalMediaUrls(config: BirthdayPageConfig): Promise
         copy.videoUrl = blobUrl;
       }
     }
-  } else {
-    const fallbackKey = `video-${copy.id}`;
-    const blobUrl = await getMediaBlobUrl(fallbackKey);
-    if (blobUrl) {
-      copy.videoUrl = blobUrl;
-    }
   }
 
   // 3. Voice message resolution
@@ -227,6 +213,81 @@ export async function resolveLocalMediaUrls(config: BirthdayPageConfig): Promise
   }
 
   return copy;
+}
+
+/**
+ * Compares two BirthdayPageConfig objects to check if user-editable content has actually changed.
+ * Ignores transient or volatile timestamps (e.g. updatedAt).
+ */
+export function areConfigsEqual(
+  a: BirthdayPageConfig | null | undefined,
+  b: BirthdayPageConfig | null | undefined
+): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  if (a === b) return true;
+
+  // 1. Direct comparison of primary scalar editable fields
+  if (a.recipientName !== b.recipientName) return false;
+  if (a.nickname !== b.nickname) return false;
+  if (a.pageTitle !== b.pageTitle) return false;
+  if (a.landingGreeting !== b.landingGreeting) return false;
+  if (a.heroHeadline !== b.heroHeadline) return false;
+  if (a.heroSubtitle !== b.heroSubtitle) return false;
+  if (a.letterHeading !== b.letterHeading) return false;
+  if (a.letterContent !== b.letterContent) return false;
+  if (a.letterClosing !== b.letterClosing) return false;
+  if (a.birthDate !== b.birthDate) return false;
+  if (a.targetAge !== b.targetAge) return false;
+  if (a.showAgeCountdown !== b.showAgeCountdown) return false;
+  if (a.passcode !== b.passcode) return false;
+  if (a.cakeFlavor !== b.cakeFlavor) return false;
+  if (a.candlesCount !== b.candlesCount) return false;
+  if (a.wishPrompt !== b.wishPrompt) return false;
+  if (a.wishCompletedMessage !== b.wishCompletedMessage) return false;
+  if (a.scratchTitle !== b.scratchTitle) return false;
+  if (a.scratchInstruction !== b.scratchInstruction) return false;
+  if (a.scratchSecretMessage !== b.scratchSecretMessage) return false;
+  if (a.profilePhotoUrl !== b.profilePhotoUrl) return false;
+  if (a.videoUrl !== b.videoUrl) return false;
+  if (a.videoTitle !== b.videoTitle) return false;
+  if (a.videoDescription !== b.videoDescription) return false;
+  if (a.videoThumbnailUrl !== b.videoThumbnailUrl) return false;
+  if (a.bgMusicTrackId !== b.bgMusicTrackId) return false;
+  if (a.customAudioUrl !== b.customAudioUrl) return false;
+  if (a.voiceMessageUrl !== b.voiceMessageUrl) return false;
+  if (a.voiceMessageSender !== b.voiceMessageSender) return false;
+  if (a.isPublished !== b.isPublished) return false;
+  if (a.slug !== b.slug) return false;
+
+  // 2. Structural sub-objects comparison (theme, sections, gallery, timeline, reasons)
+  const normA = {
+    theme: a.theme,
+    sections: a.sections,
+    galleryPhotos: a.galleryPhotos,
+    galleryHeading: a.galleryHeading,
+    gallerySubtitle: a.gallerySubtitle,
+    timelineMemories: a.timelineMemories,
+    timelineHeading: a.timelineHeading,
+    timelineSubtitle: a.timelineSubtitle,
+    reasonsHeading: a.reasonsHeading,
+    reasonsList: a.reasonsList
+  };
+
+  const normB = {
+    theme: b.theme,
+    sections: b.sections,
+    galleryPhotos: b.galleryPhotos,
+    galleryHeading: b.galleryHeading,
+    gallerySubtitle: b.gallerySubtitle,
+    timelineMemories: b.timelineMemories,
+    timelineHeading: b.timelineHeading,
+    timelineSubtitle: b.timelineSubtitle,
+    reasonsHeading: b.reasonsHeading,
+    reasonsList: b.reasonsList
+  };
+
+  return JSON.stringify(normA) === JSON.stringify(normB);
 }
 
 /**

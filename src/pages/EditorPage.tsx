@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { BirthdayPageConfig } from '../types';
-import { getPageById, resolvePageAsync, savePage, createNewBirthdayPage } from '../lib/storage';
+import { getPageById, resolvePageAsync, savePage, savePageLocally, createNewBirthdayPage, areConfigsEqual } from '../lib/storage';
 import { DEFAULT_DEMO_CONFIG } from '../constants/presets';
 import { useAuth } from '../context/AuthContext';
 import { Navbar } from '../components/common/Navbar';
@@ -35,6 +35,12 @@ export const EditorPage: React.FC = () => {
   // View mode state: on mobile default to 'editor-only', desktop default to 'split'
   const [viewMode, setViewMode] = useState<'split' | 'editor-only' | 'preview-only'>('split');
   const autoSaveTimerRef = useRef<number | null>(null);
+  const isSavingRef = useRef<boolean>(false);
+  const queuedSaveRef = useRef<boolean>(false);
+  const lastSavedConfigRef = useRef<BirthdayPageConfig>(config);
+  const latestConfigRef = useRef<BirthdayPageConfig>(config);
+  const userRef = useRef(user);
+  userRef.current = user;
 
   // Load configuration by ID with full async media resolution
   useEffect(() => {
@@ -44,9 +50,11 @@ export const EditorPage: React.FC = () => {
       // 1. If visiting /editor with no ID, immediately initialize a new unique birthday page
       if (!id) {
         const created = createNewBirthdayPage('Best Friend');
-        if (user) created.userId = user.id;
+        if (userRef.current) created.userId = userRef.current.id;
         if (isMounted) {
           setConfig(created);
+          lastSavedConfigRef.current = created;
+          latestConfigRef.current = created;
           setIsLoading(false);
           navigate(`/editor/${created.id}`, { replace: true });
         }
@@ -60,13 +68,15 @@ export const EditorPage: React.FC = () => {
           id: `bday-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
           slug: `celebration-${Math.floor(1000 + Math.random() * 9000)}`,
           isPublished: false,
-          userId: user?.id,
+          userId: userRef.current?.id,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
         savePage(forked).catch(() => {});
         if (isMounted) {
           setConfig(forked);
+          lastSavedConfigRef.current = forked;
+          latestConfigRef.current = forked;
           setIsLoading(false);
           navigate(`/editor/${forked.id}`, { replace: true });
         }
@@ -79,6 +89,8 @@ export const EditorPage: React.FC = () => {
       const initial = getPageById(id);
       if (initial && isMounted) {
         setConfig(initial);
+        lastSavedConfigRef.current = initial;
+        latestConfigRef.current = initial;
       }
 
       // Full async resolution (creator studio allows local fallback for editing drafts)
@@ -86,10 +98,14 @@ export const EditorPage: React.FC = () => {
       if (isMounted) {
         if (resolved) {
           setConfig(resolved);
+          lastSavedConfigRef.current = resolved;
+          latestConfigRef.current = resolved;
         } else if (!initial) {
           const created = createNewBirthdayPage('Best Friend');
-          if (user) created.userId = user.id;
+          if (userRef.current) created.userId = userRef.current.id;
           setConfig(created);
+          lastSavedConfigRef.current = created;
+          latestConfigRef.current = created;
           navigate(`/editor/${created.id}`, { replace: true });
         }
         setIsLoading(false);
@@ -101,59 +117,171 @@ export const EditorPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [id, navigate, user]);
+  }, [id, navigate]);
 
-  // Unified save action with verified feedback
-  const handleExplicitSave = useCallback(async (customConfig?: BirthdayPageConfig) => {
-    const target = { ...(customConfig || config) };
-    if (user && !target.userId) {
-      target.userId = user.id;
+  // Unified save action with verified feedback, dirty-checking, and queueing
+  const executeSavePipeline = useCallback(async (customConfig?: BirthdayPageConfig) => {
+    if (customConfig) {
+      latestConfigRef.current = customConfig;
     }
+
+    // Requirement 4: Prevent duplicate and overlapping save requests
+    // If a save is already in progress, queue the latest changes to be saved once the active save completes
+    if (isSavingRef.current) {
+      queuedSaveRef.current = true;
+      return;
+    }
+
+    const target = latestConfigRef.current;
+
+    // Requirement 3: Save only when data has actually changed from the last successfully saved version
+    if (lastSavedConfigRef.current && areConfigsEqual(target, lastSavedConfigRef.current)) {
+      setHasUnsavedChanges(false);
+      return;
+    }
+
+    isSavingRef.current = true;
+    queuedSaveRef.current = false;
     setSaveStatus('saving');
     setSaveMessage(null);
 
     try {
-      const res = await savePage(target);
+      const configToSave = {
+        ...target,
+        updatedAt: new Date().toISOString()
+      };
+      const currentUser = userRef.current;
+      if (currentUser && !configToSave.userId) {
+        configToSave.userId = currentUser.id;
+      }
+
+      const res = await savePage(configToSave);
       if (res.success) {
-        if (res.config) {
-          setConfig(res.config);
-        }
+        const savedConfig = res.config || configToSave;
+        lastSavedConfigRef.current = savedConfig;
+        latestConfigRef.current = {
+          ...latestConfigRef.current,
+          id: savedConfig.id,
+          slug: savedConfig.slug,
+          userId: savedConfig.userId,
+          updatedAt: savedConfig.updatedAt
+        };
+        setConfig((prev) => ({
+          ...prev,
+          id: savedConfig.id,
+          slug: savedConfig.slug,
+          userId: savedConfig.userId,
+          updatedAt: savedConfig.updatedAt
+        }));
+
         setSaveStatus('saved');
         setHasUnsavedChanges(false);
         setSaveMessage('All changes saved successfully!');
         setTimeout(() => {
-          setSaveStatus('idle');
+          setSaveStatus((s) => s === 'saved' ? 'idle' : s);
           setSaveMessage(null);
         }, 3000);
       } else {
         setSaveStatus('error');
-        setSaveMessage(res.error || 'Failed to save changes to cloud. Please try again.');
+        setSaveMessage(res.error || 'Failed to save changes. Will retry automatically.');
       }
     } catch (err: unknown) {
       console.error('Save error:', err);
       setSaveStatus('error');
       const msg = err instanceof Error ? err.message : 'Unknown error during save';
       setSaveMessage(msg);
+    } finally {
+      isSavingRef.current = false;
+      // Requirement 4: If user made additional changes while save was in progress,
+      // save the latest changes safely after current request completes
+      if (
+        queuedSaveRef.current ||
+        (latestConfigRef.current && !areConfigsEqual(latestConfigRef.current, lastSavedConfigRef.current))
+      ) {
+        queuedSaveRef.current = false;
+        window.setTimeout(() => {
+          executeSavePipeline();
+        }, 200);
+      }
     }
-  }, [config, user]);
+  }, []);
 
-  // Handle configuration updates from child components
+  const handleExplicitSave = useCallback((customConfig?: BirthdayPageConfig) => {
+    if (autoSaveTimerRef.current) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    executeSavePipeline(customConfig);
+  }, [executeSavePipeline]);
+
+  // Handle configuration updates from child components:
+  // - Requirement 1: 1.5-second debounce after the user stops editing
+  // - Requirement 2: Do not send a save request for every keystroke
+  // - Requirement 3: Save only when data has actually changed
+  // - Requirement 5: Applies to text, recipient name, messages, theme settings, and sections
   const handleUpdateConfig = useCallback((updated: Partial<BirthdayPageConfig>) => {
     setConfig((prev) => {
       const merged = { ...prev, ...updated, updatedAt: new Date().toISOString() };
-      setHasUnsavedChanges(true);
+      latestConfigRef.current = merged;
 
-      // Debounced background autosave
+      // Check if actual content changed from last saved version
+      const hasActualChanges = !areConfigsEqual(merged, lastSavedConfigRef.current);
+      setHasUnsavedChanges(hasActualChanges);
+
+      // Instant local persistence (0 network calls, guarantees local state safety)
+      savePageLocally(merged);
+
+      // Reset debounce timer on every keystroke/edit
       if (autoSaveTimerRef.current) {
         window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
       }
+
+      // If data matches saved version, no cloud request needed
+      if (!hasActualChanges) {
+        return merged;
+      }
+
+      // Requirement 1: 1.5-second (1500ms) debounce after user stops editing before saving changes
       autoSaveTimerRef.current = window.setTimeout(() => {
-        handleExplicitSave(merged);
-      }, 1200);
+        executeSavePipeline();
+      }, 1500);
 
       return merged;
     });
-  }, [handleExplicitSave]);
+  }, [executeSavePipeline]);
+
+  // Requirement 9: Safe flush strategy so latest edits are not lost when navigating away
+  useEffect(() => {
+    // 1. Browser tab close or refresh
+    const handleBeforeUnload = () => {
+      if (latestConfigRef.current) {
+        savePageLocally(latestConfigRef.current);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // 2. React SPA unmount (navigating to dashboard, preview, or another route)
+      if (autoSaveTimerRef.current) {
+        window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      if (latestConfigRef.current) {
+        savePageLocally(latestConfigRef.current);
+        // Flush cloud save if unsaved changes remain and not currently in-flight
+        if (
+          lastSavedConfigRef.current &&
+          !areConfigsEqual(latestConfigRef.current, lastSavedConfigRef.current) &&
+          !isSavingRef.current
+        ) {
+          savePage(latestConfigRef.current).catch(() => {});
+        }
+      }
+    };
+  }, []);
 
   const tabs: { key: TabKey; label: string; shortLabel: string; icon: React.ReactNode }[] = [
     { key: 'details', label: 'Basic Details', shortLabel: 'Details', icon: <User className="w-4 h-4 shrink-0" /> },
@@ -188,36 +316,36 @@ export const EditorPage: React.FC = () => {
 
             <span className="text-slate-600 hidden sm:inline">|</span>
 
-            {/* Save Status Badge */}
-            <div className="flex items-center gap-1 text-[11px] sm:text-xs shrink-0">
+            {/* Save Status Badge (Requirement 7: subtle Saving..., Saved, or Save failed status) */}
+            <div className="flex items-center gap-1.5 text-xs shrink-0 font-medium" aria-live="polite">
               {saveStatus === 'saving' && (
-                <span className="flex items-center gap-1 text-amber-400 font-medium animate-pulse">
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                  <span className="hidden xs:inline">Saving...</span>
+                <span className="flex items-center gap-1.5 text-amber-400 animate-pulse">
+                  <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+                  <span>Saving…</span>
                 </span>
               )}
               {saveStatus === 'saved' && (
-                <span className="flex items-center gap-1 text-emerald-400 font-medium animate-in fade-in">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span className="hidden xs:inline">Saved</span>
+                <span className="flex items-center gap-1.5 text-emerald-400 animate-in fade-in">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Saved</span>
                 </span>
               )}
               {saveStatus === 'error' && (
-                <span className="flex items-center gap-1 text-rose-400 font-medium">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  <span className="hidden xs:inline">Error Saving</span>
+                <span className="flex items-center gap-1.5 text-rose-400" title={saveMessage || 'Save failed'}>
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Save failed</span>
                 </span>
               )}
               {saveStatus === 'idle' && (
                 hasUnsavedChanges ? (
-                  <span className="text-amber-300/90 text-[11px] font-medium flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                    <span className="hidden xs:inline">Unsaved changes</span>
+                  <span className="text-amber-300/90 text-[11px] flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0" />
+                    <span>Unsaved changes</span>
                   </span>
                 ) : (
-                  <span className="text-emerald-400/80 text-[11px] font-medium flex items-center gap-1">
-                    <Check className="w-3 h-3" />
-                    <span className="hidden xs:inline">All changes saved</span>
+                  <span className="text-emerald-400/80 text-[11px] flex items-center gap-1.5">
+                    <Check className="w-3 h-3 shrink-0" />
+                    <span>All changes saved</span>
                   </span>
                 )
               )}

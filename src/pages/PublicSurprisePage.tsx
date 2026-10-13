@@ -114,6 +114,19 @@ export const PublicSurprisePage: React.FC = () => {
     };
   }, [slug]);
 
+  // Preload primary celebration media while the user is viewing the Gift Box landing screen
+  useEffect(() => {
+    if (!config) return;
+    if (config.profilePhotoUrl && config.profilePhotoUrl.startsWith('http')) {
+      const img = new Image();
+      img.src = config.profilePhotoUrl;
+    }
+    if (config.galleryPhotos?.[0]?.url && config.galleryPhotos[0].url.startsWith('http')) {
+      const img = new Image();
+      img.src = config.galleryPhotos[0].url;
+    }
+  }, [config]);
+
   const handlePasscodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!config?.passcode) return;

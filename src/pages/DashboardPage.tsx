@@ -39,7 +39,7 @@ export const DashboardPage: React.FC = () => {
 
   useEffect(() => {
     refreshPages();
-  }, [user]);
+  }, [user?.id]);
 
   const handleCreateNew = async (e: React.FormEvent) => {
     e.preventDefault();

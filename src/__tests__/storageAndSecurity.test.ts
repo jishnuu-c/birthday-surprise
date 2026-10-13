@@ -4,14 +4,18 @@ import {
   savePageLocally, 
   getPageById, 
   getAllPages,
-  generateShareableDataUrl 
+  generateShareableDataUrl,
+  areConfigsEqual
 } from '../lib/storage';
 import { 
   uploadRemoteMedia, 
   isSupabaseConfigured,
   isServiceRoleKey,
   isAnonOrPublishableKey,
-  getSupabaseConfigError
+  getSupabaseConfigError,
+  isRateLimitError,
+  getRetryDelayMs,
+  withRateLimitRetry
 } from '../lib/supabase';
 import { BirthdayPageConfig } from '../types';
 
@@ -157,5 +161,119 @@ describe('Media Validation & Security Rules', () => {
 
     // Service-role key error
     expect(getSupabaseConfigError('https://valid.supabase.co', 'sb_secret_12345')).toContain('CRITICAL SECURITY ERROR');
+  });
+
+  it('correctly identifies HTTP 429 rate limit errors from various shapes', () => {
+    // 1. Direct status number
+    expect(isRateLimitError({ status: 429 })).toBe(true);
+    expect(isRateLimitError({ statusCode: 429 })).toBe(true);
+    expect(isRateLimitError({ code: 429 })).toBe(true);
+    expect(isRateLimitError({ code: '429' })).toBe(true);
+
+    // 2. Message based
+    expect(isRateLimitError({ message: 'Too Many Requests' })).toBe(true);
+    expect(isRateLimitError({ message: 'Request rate limit exceeded. Please retry later.' })).toBe(true);
+    expect(isRateLimitError({ message: 'Failed to load resource: the server responded with a status of 429 ()' })).toBe(true);
+
+    // 3. Non-429 errors
+    expect(isRateLimitError({ status: 404, message: 'Not found' })).toBe(false);
+    expect(isRateLimitError({ status: 500, message: 'Internal Server Error' })).toBe(false);
+    expect(isRateLimitError(null)).toBe(false);
+  });
+
+  it('calculates retry delay respecting Retry-After and applies exponential backoff', () => {
+    // Explicit Retry-After header in seconds
+    expect(getRetryDelayMs({ retryAfter: 3 }, 0)).toBe(3000);
+    expect(getRetryDelayMs({ 'retry-after': '5' }, 0)).toBe(5000);
+
+    // Exponential backoff fallback: baseDelay * 2^attempt + jitter
+    const delayAttempt0 = getRetryDelayMs({}, 0, 500);
+    expect(delayAttempt0).toBeGreaterThanOrEqual(500);
+    expect(delayAttempt0).toBeLessThan(1000);
+
+    const delayAttempt1 = getRetryDelayMs({}, 1, 500);
+    expect(delayAttempt1).toBeGreaterThanOrEqual(1000);
+    expect(delayAttempt1).toBeLessThan(1500);
+  });
+
+  it('retries operations that encounter HTTP 429 and succeeds once cleared', async () => {
+    let callCount = 0;
+    const failingThenSucceedingOp = async () => {
+      callCount++;
+      if (callCount < 3) {
+        return { data: null, error: { status: 429, message: 'Too Many Requests' } };
+      }
+      return { data: { success: true }, error: null };
+    };
+
+    const result = await withRateLimitRetry(failingThenSucceedingOp, 3, 10);
+    expect(callCount).toBe(3);
+    expect(result.data?.success).toBe(true);
+  });
+});
+
+describe('Auto-Save Optimization & Dirty Checking (areConfigsEqual)', () => {
+  it('returns true when comparing identical configs', () => {
+    const pageA = createNewBirthdayPage('Sophia');
+    const pageB = JSON.parse(JSON.stringify(pageA)) as BirthdayPageConfig;
+    expect(areConfigsEqual(pageA, pageB)).toBe(true);
+  });
+
+  it('ignores volatile updatedAt timestamp differences to prevent unnecessary saves', () => {
+    const pageA = createNewBirthdayPage('Sophia');
+    pageA.updatedAt = '2026-01-01T00:00:00.000Z';
+    const pageB = {
+      ...pageA,
+      updatedAt: '2026-01-02T12:34:56.789Z'
+    };
+    expect(areConfigsEqual(pageA, pageB)).toBe(true);
+  });
+
+  it('detects changes in editable text (recipientName, heroHeadline, letterContent)', () => {
+    const original = createNewBirthdayPage('Sophia');
+    
+    // Changing recipientName
+    const editedName = { ...original, recipientName: 'Sophia Isabella' };
+    expect(areConfigsEqual(original, editedName)).toBe(false);
+
+    // Changing heroHeadline
+    const editedHero = { ...original, heroHeadline: 'Wishing You Joy!' };
+    expect(areConfigsEqual(original, editedHero)).toBe(false);
+
+    // Changing letterContent
+    const editedLetter = { ...original, letterContent: 'Happy birthday, hope you have a fabulous year!' };
+    expect(areConfigsEqual(original, editedLetter)).toBe(false);
+  });
+
+  it('detects changes in theme customizations and section configurations', () => {
+    const original = createNewBirthdayPage('Lucas');
+
+    // Modifying theme primary color
+    const editedTheme: BirthdayPageConfig = {
+      ...original,
+      theme: {
+        ...original.theme,
+        primaryColor: '#FF0055'
+      }
+    };
+    expect(areConfigsEqual(original, editedTheme)).toBe(false);
+
+    // Toggling section visibility
+    const editedSections: BirthdayPageConfig = {
+      ...original,
+      sections: {
+        ...original.sections,
+        birthdayCake: false
+      }
+    };
+    expect(areConfigsEqual(original, editedSections)).toBe(false);
+  });
+
+  it('safely handles null and undefined configs without throwing', () => {
+    const page = createNewBirthdayPage('Lucas');
+    expect(areConfigsEqual(null, null)).toBe(true);
+    expect(areConfigsEqual(undefined, undefined)).toBe(true);
+    expect(areConfigsEqual(page, null)).toBe(false);
+    expect(areConfigsEqual(null, page)).toBe(false);
   });
 });

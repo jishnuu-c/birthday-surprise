@@ -136,52 +136,248 @@ export const supabase = isSupabaseConfigured
   : null;
 
 /**
- * Get the currently authenticated user if one exists
+ * Detects whether an error is an HTTP 429 (Too Many Requests) or rate-limit response.
+ */
+export function isRateLimitError(err: unknown): boolean {
+  if (!err) return false;
+  if (typeof err === 'object') {
+    const errorObj = err as Record<string, unknown>;
+    if (errorObj.status === 429 || errorObj.statusCode === 429 || errorObj.code === '429' || errorObj.code === 429) {
+      return true;
+    }
+    const message = typeof errorObj.message === 'string' ? errorObj.message.toLowerCase() : '';
+    if (message.includes('429') || message.includes('too many requests') || message.includes('rate limit')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Extracts retry-after delay in milliseconds from an error or headers if available, or falls back to exponential backoff.
+ */
+export function getRetryDelayMs(err: unknown, attempt: number, baseDelay = 1000): number {
+  if (err && typeof err === 'object') {
+    const errorObj = err as Record<string, unknown>;
+    const retryAfter = errorObj.retryAfter || errorObj['retry-after'];
+    if (typeof retryAfter === 'number' && retryAfter > 0) {
+      return retryAfter * 1000;
+    }
+    if (typeof retryAfter === 'string') {
+      const parsed = parseFloat(retryAfter);
+      if (!isNaN(parsed) && parsed > 0) {
+        return Math.round(parsed * 1000);
+      }
+    }
+  }
+  // Exponential backoff with jitter: baseDelay * 2^attempt + random(0..400ms)
+  const backoff = baseDelay * Math.pow(2, attempt);
+  const jitter = Math.floor(Math.random() * 400);
+  return Math.min(backoff + jitter, 10000);
+}
+
+/**
+ * Executes an operation with automatic retry on HTTP 429 rate limits.
+ */
+export async function withRateLimitRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries = 3,
+  baseDelay = 1000
+): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      const result = await operation();
+      // Supabase PostgREST client returns { data, error } without throwing
+      if (result && typeof result === 'object' && 'error' in result && (result as { error?: unknown }).error) {
+        const error = (result as { error?: unknown }).error;
+        if (isRateLimitError(error) && attempt < maxRetries) {
+          const delay = getRetryDelayMs(error, attempt, baseDelay);
+          console.warn(`⏳ [Rate Limit 429] Supabase API rate limited. Retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+          await new Promise((res) => setTimeout(res, delay));
+          attempt++;
+          continue;
+        }
+      }
+      return result;
+    } catch (err: unknown) {
+      if (isRateLimitError(err) && attempt < maxRetries) {
+        const delay = getRetryDelayMs(err, attempt, baseDelay);
+        console.warn(`⏳ [Rate Limit 429] Request rate limited. Retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+        await new Promise((res) => setTimeout(res, delay));
+        attempt++;
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+// User session memory cache to avoid spamming /auth/v1/user
+let cachedUser: User | null = null;
+let lastUserCheck = 0;
+const USER_CACHE_TTL = 15_000; // 15 seconds
+
+if (supabase) {
+  supabase.auth.onAuthStateChange((_event, session) => {
+    cachedUser = session?.user ?? null;
+    lastUserCheck = Date.now();
+  });
+}
+
+/**
+ * Get the currently authenticated user if one exists.
+ * Uses local session first (zero network requests) to avoid HTTP 429 auth rate limits.
  */
 export async function getCurrentUser(): Promise<User | null> {
   if (!supabase) return null;
+  const now = Date.now();
+  if (cachedUser && (now - lastUserCheck < USER_CACHE_TTL)) {
+    return cachedUser;
+  }
+
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    return user;
+    // 1. Check local session storage (instant, no network request)
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      cachedUser = session.user;
+      lastUserCheck = now;
+      return cachedUser;
+    }
+
+    // 2. Query getUser() with retry only if no session found locally
+    const { data: { user } } = await withRateLimitRetry(async () => {
+      return await supabase!.auth.getUser();
+    }, 2, 800);
+
+    cachedUser = user;
+    lastUserCheck = now;
+    return cachedUser;
   } catch {
     return null;
   }
 }
 
+// In-flight singleton lock to prevent concurrent redundant anonymous sign-ins
+let ongoingAnonSignIn: Promise<User | null> | null = null;
+
+export async function getOrCreateCurrentUser(): Promise<User | null> {
+  if (!supabase) return null;
+  const existing = await getCurrentUser();
+  if (existing) return existing;
+
+  if (ongoingAnonSignIn) {
+    return ongoingAnonSignIn;
+  }
+
+  ongoingAnonSignIn = (async () => {
+    try {
+      const res = await withRateLimitRetry(async () => {
+        return await supabase!.auth.signInAnonymously();
+      }, 3, 1200);
+
+      if (res.error) {
+        console.warn('Anonymous sign-in error:', res.error.message);
+        return null;
+      }
+      if (res.data?.user) {
+        cachedUser = res.data.user;
+        lastUserCheck = Date.now();
+        return res.data.user;
+      }
+      return null;
+    } catch (err) {
+      console.warn('Anonymous sign-in exception:', err);
+      return null;
+    } finally {
+      ongoingAnonSignIn = null;
+    }
+  })();
+
+  return ongoingAnonSignIn;
+}
+
+interface CacheEntry {
+  config: BirthdayPageConfig;
+  timestamp: number;
+}
+const remotePageCache = new Map<string, CacheEntry>();
+const inFlightFetches = new Map<string, Promise<BirthdayPageConfig | null>>();
+const PAGE_CACHE_TTL_MS = 30_000; // 30 seconds cache
+
+export function invalidateRemotePageCache(slugOrId?: string): void {
+  if (slugOrId) {
+    remotePageCache.delete(slugOrId);
+  } else {
+    remotePageCache.clear();
+  }
+}
+
 /**
  * Fetch a single published birthday page (or a page owned by the current user) by slug or ID.
+ * Features in-memory caching, in-flight deduplication, and automatic HTTP 429 exponential backoff retry.
  * Never returns default demo data.
  */
-export async function fetchRemoteBirthdayPage(slugOrId: string): Promise<BirthdayPageConfig | null> {
+export async function fetchRemoteBirthdayPage(slugOrId: string, forceFresh = false): Promise<BirthdayPageConfig | null> {
   if (!supabase) return null;
-  try {
-    const { data, error } = await supabase
-      .from('birthday_pages')
-      .select('id, slug, is_published, config, updated_at')
-      .or(`slug.eq.${slugOrId},id.eq.${slugOrId}`)
-      .order('updated_at', { ascending: false })
-      .limit(1);
+  const key = slugOrId.trim();
 
-    if (error) {
-      console.warn('Supabase query returned error:', error.message);
-      return null;
+  // 1. Check in-memory cache if not forcing fresh fetch
+  if (!forceFresh) {
+    const cached = remotePageCache.get(key);
+    if (cached && (Date.now() - cached.timestamp < PAGE_CACHE_TTL_MS)) {
+      return cached.config;
     }
-
-    if (data && data.length > 0 && data[0].config) {
-      const pageConfig = data[0].config as BirthdayPageConfig;
-      // Guarantee synchronized isPublished, id, and slug values
-      pageConfig.id = data[0].id || pageConfig.id;
-      pageConfig.slug = data[0].slug || pageConfig.slug;
-      pageConfig.isPublished = data[0].is_published ?? pageConfig.isPublished;
-      pageConfig.updatedAt = data[0].updated_at || pageConfig.updatedAt;
-      return pageConfig;
-    }
-
-    return null;
-  } catch (err) {
-    console.warn('Failed to query remote birthday page from Supabase:', err);
-    return null;
   }
+
+  // 2. Return in-flight promise if query is already active (prevents duplicate simultaneous calls)
+  if (inFlightFetches.has(key)) {
+    return inFlightFetches.get(key)!;
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const { data, error } = await withRateLimitRetry(async () => {
+        return await supabase!
+          .from('birthday_pages')
+          .select('id, slug, is_published, config, updated_at')
+          .or(`slug.eq.${key},id.eq.${key}`)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+      }, 3, 1000);
+
+      if (error) {
+        console.warn('Supabase query returned error:', error.message);
+        return null;
+      }
+
+      if (data && data.length > 0 && data[0].config) {
+        const pageConfig = data[0].config as BirthdayPageConfig;
+        pageConfig.id = data[0].id || pageConfig.id;
+        pageConfig.slug = data[0].slug || pageConfig.slug;
+        pageConfig.isPublished = data[0].is_published ?? pageConfig.isPublished;
+        pageConfig.updatedAt = data[0].updated_at || pageConfig.updatedAt;
+
+        // Cache result by both lookup key and resolved id/slug
+        const entry: CacheEntry = { config: pageConfig, timestamp: Date.now() };
+        remotePageCache.set(key, entry);
+        if (pageConfig.id) remotePageCache.set(pageConfig.id, entry);
+        if (pageConfig.slug) remotePageCache.set(pageConfig.slug, entry);
+
+        return pageConfig;
+      }
+
+      return null;
+    } catch (err) {
+      console.warn('Failed to query remote birthday page from Supabase:', err);
+      return null;
+    } finally {
+      inFlightFetches.delete(key);
+    }
+  })();
+
+  inFlightFetches.set(key, fetchPromise);
+  return fetchPromise;
 }
 
 /**
@@ -193,11 +389,13 @@ export async function fetchUserRemotePages(): Promise<BirthdayPageConfig[]> {
     const user = await getCurrentUser();
     if (!user) return [];
 
-    const { data, error } = await supabase
-      .from('birthday_pages')
-      .select('config, is_published, updated_at')
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false });
+    const { data, error } = await withRateLimitRetry(async () => {
+      return await supabase!
+        .from('birthday_pages')
+        .select('config, is_published, updated_at')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
+    }, 3, 1000);
 
     if (error) {
       console.error('Failed to fetch user pages:', error);
@@ -400,18 +598,12 @@ export async function saveRemoteBirthdayPage(
   }
 
   try {
-    let user = await getCurrentUser();
-
-    // If user is not yet logged in, auto-initialize an anonymous session for secure ownership
+    const user = await getOrCreateCurrentUser();
     if (!user) {
-      const { data: anonData, error: anonErr } = await supabase.auth.signInAnonymously();
-      if (anonErr || !anonData.user) {
-        return { 
-          success: false, 
-          error: `Authentication required: please sign in or create an account to save your birthday surprise to the cloud (${anonErr?.message || 'Guest session unavailable'}).` 
-        };
-      }
-      user = anonData.user;
+      return { 
+        success: false, 
+        error: 'Authentication required: please sign in or create an account to save your birthday surprise to the cloud.' 
+      };
     }
 
     // Ensure all media URLs are persistent cloud storage URLs
@@ -434,24 +626,9 @@ export async function saveRemoteBirthdayPage(
 
     cleanConfig.slug = cleanSlug;
 
-    // Perform upsert with full JSON configuration
-    let { error } = await supabase
-      .from('birthday_pages')
-      .upsert({
-        id: cleanConfig.id,
-        slug: cleanSlug,
-        user_id: user.id,
-        recipient_name: cleanConfig.recipientName || 'Friend',
-        is_published: cleanConfig.isPublished ?? false,
-        config: cleanConfig,
-        updated_at: cleanConfig.updatedAt
-      }, { onConflict: 'id' });
-
-    // Handle slug uniqueness constraint collision by appending unique suffix
-    if (error && (error.message.includes('birthday_pages_slug_key') || error.code === '23505')) {
-      cleanSlug = `${cleanSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
-      cleanConfig.slug = cleanSlug;
-      const retryRes = await supabase
+    // Perform upsert with full JSON configuration, protected with 429 exponential backoff retry
+    let { error } = await withRateLimitRetry(async () => {
+      return await supabase!
         .from('birthday_pages')
         .upsert({
           id: cleanConfig.id,
@@ -462,6 +639,25 @@ export async function saveRemoteBirthdayPage(
           config: cleanConfig,
           updated_at: cleanConfig.updatedAt
         }, { onConflict: 'id' });
+    }, 3, 1200);
+
+    // Handle slug uniqueness constraint collision by appending unique suffix
+    if (error && (error.message.includes('birthday_pages_slug_key') || error.code === '23505')) {
+      cleanSlug = `${cleanSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
+      cleanConfig.slug = cleanSlug;
+      const retryRes = await withRateLimitRetry(async () => {
+        return await supabase!
+          .from('birthday_pages')
+          .upsert({
+            id: cleanConfig.id,
+            slug: cleanSlug,
+            user_id: user.id,
+            recipient_name: cleanConfig.recipientName || 'Friend',
+            is_published: cleanConfig.isPublished ?? false,
+            config: cleanConfig,
+            updated_at: cleanConfig.updatedAt
+          }, { onConflict: 'id' });
+      }, 3, 1200);
       error = retryRes.error;
     }
 
@@ -469,6 +665,11 @@ export async function saveRemoteBirthdayPage(
       console.error('Supabase upsert error:', error);
       return { success: false, error: error.message };
     }
+
+    // Synchronize in-memory cache so subsequent reads do not trigger duplicate network queries
+    const entry: CacheEntry = { config: cleanConfig, timestamp: Date.now() };
+    remotePageCache.set(cleanConfig.id, entry);
+    if (cleanConfig.slug) remotePageCache.set(cleanConfig.slug, entry);
 
     return { success: true, config: cleanConfig };
   } catch (err: unknown) {
@@ -484,10 +685,13 @@ export async function saveRemoteBirthdayPage(
 export async function deleteRemoteBirthdayPage(id: string): Promise<{ success: boolean; error?: string }> {
   if (!supabase) return { success: false, error: 'Supabase not configured' };
   try {
-    const { error } = await supabase
-      .from('birthday_pages')
-      .delete()
-      .eq('id', id);
+    invalidateRemotePageCache(id);
+    const { error } = await withRateLimitRetry(async () => {
+      return await supabase!
+        .from('birthday_pages')
+        .delete()
+        .eq('id', id);
+    }, 3, 1000);
 
     if (error) {
       console.error('Supabase delete error:', error);
@@ -511,7 +715,7 @@ const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50 MB
 
 /**
  * Upload a media file (Image, Audio, or Video) to Supabase Storage bucket 'birthday-media'
- * with validation, size limits, and user path isolation
+ * with validation, size limits, user path isolation, and rate-limit retry
  */
 export async function uploadRemoteMedia(
   file: File | Blob,
@@ -534,13 +738,9 @@ export async function uploadRemoteMedia(
   }
 
   try {
-    let user = await getCurrentUser();
+    const user = await getOrCreateCurrentUser();
     if (!user) {
-      const { data: anonData, error: anonErr } = await supabase.auth.signInAnonymously();
-      if (anonErr || !anonData.user) {
-        return { url: null, error: 'Authentication required for upload. Please sign in or use guest session.' };
-      }
-      user = anonData.user;
+      return { url: null, error: 'Authentication required for upload. Please sign in or use guest session.' };
     }
 
     const bucket = 'birthday-media';
@@ -550,12 +750,14 @@ export async function uploadRemoteMedia(
     // Store in user-scoped path for clean RLS management: userId/folder/timestamp-name
     const path = `${user.id}/${folder}/${Date.now()}-${cleanName}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from(bucket)
-      .upload(path, file, {
-        upsert: true,
-        contentType: file.type || undefined
-      });
+    const { error: uploadError } = await withRateLimitRetry(async () => {
+      return await supabase!.storage
+        .from(bucket)
+        .upload(path, file, {
+          upsert: true,
+          contentType: file.type || undefined
+        });
+    }, 3, 1200);
 
     if (uploadError) {
       console.error('Upload error to Supabase bucket:', uploadError);
