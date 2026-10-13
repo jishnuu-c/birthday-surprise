@@ -1,5 +1,6 @@
 import { createClient, User } from '@supabase/supabase-js';
 import { BirthdayPageConfig } from '../types';
+import { getMediaRecord } from './mediaDb';
 
 const rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const rawKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
@@ -38,14 +39,15 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 /**
- * Fetch a single published birthday page (or a page owned by the current user) by slug or ID
+ * Fetch a single published birthday page (or a page owned by the current user) by slug or ID.
+ * Never returns default demo data.
  */
 export async function fetchRemoteBirthdayPage(slugOrId: string): Promise<BirthdayPageConfig | null> {
   if (!supabase) return null;
   try {
     const { data, error } = await supabase
       .from('birthday_pages')
-      .select('config, is_published, updated_at')
+      .select('id, slug, is_published, config, updated_at')
       .or(`slug.eq.${slugOrId},id.eq.${slugOrId}`)
       .order('updated_at', { ascending: false })
       .limit(1);
@@ -56,7 +58,13 @@ export async function fetchRemoteBirthdayPage(slugOrId: string): Promise<Birthda
     }
 
     if (data && data.length > 0 && data[0].config) {
-      return data[0].config as BirthdayPageConfig;
+      const pageConfig = data[0].config as BirthdayPageConfig;
+      // Guarantee synchronized isPublished, id, and slug values
+      pageConfig.id = data[0].id || pageConfig.id;
+      pageConfig.slug = data[0].slug || pageConfig.slug;
+      pageConfig.isPublished = data[0].is_published ?? pageConfig.isPublished;
+      pageConfig.updatedAt = data[0].updated_at || pageConfig.updatedAt;
+      return pageConfig;
     }
 
     return null;
@@ -77,7 +85,7 @@ export async function fetchUserRemotePages(): Promise<BirthdayPageConfig[]> {
 
     const { data, error } = await supabase
       .from('birthday_pages')
-      .select('config, updated_at')
+      .select('config, is_published, updated_at')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false });
 
@@ -87,7 +95,13 @@ export async function fetchUserRemotePages(): Promise<BirthdayPageConfig[]> {
     }
 
     if (!data) return [];
-    return data.map((row) => row.config as BirthdayPageConfig).filter(Boolean);
+    return data.map((row) => {
+      const cfg = row.config as BirthdayPageConfig;
+      if (cfg) {
+        cfg.isPublished = row.is_published ?? cfg.isPublished;
+      }
+      return cfg;
+    }).filter(Boolean);
   } catch (err) {
     console.error('Error in fetchUserRemotePages:', err);
     return [];
@@ -95,9 +109,182 @@ export async function fetchUserRemotePages(): Promise<BirthdayPageConfig[]> {
 }
 
 /**
- * Persists a birthday page to Supabase with proper user ownership and RLS enforcement
+ * Ensures all media URLs in the page configuration are permanent cloud storage URLs.
+ * If temporary browser blob: or indexeddb: URLs are detected, they are resolved from IndexedDB
+ * or fetched and uploaded to the Supabase Storage 'birthday-media' bucket.
  */
-export async function saveRemoteBirthdayPage(config: BirthdayPageConfig): Promise<{ success: boolean; error?: string }> {
+export async function ensurePersistentMedia(
+  config: BirthdayPageConfig
+): Promise<{ config: BirthdayPageConfig; error?: string }> {
+  if (!isSupabaseConfigured) {
+    return { config };
+  }
+
+  const copy: BirthdayPageConfig = {
+    ...config,
+    galleryPhotos: config.galleryPhotos ? config.galleryPhotos.map((p) => ({ ...p })) : [],
+    timelineMemories: config.timelineMemories ? config.timelineMemories.map((m) => ({ ...m })) : []
+  };
+
+  async function uploadBlobOrIndexedDb(
+    url: string,
+    folder: 'images' | 'audios' | 'videos',
+    fallbackKey?: string,
+    preferredName?: string
+  ): Promise<{ url: string | null; error?: string }> {
+    let blob: Blob | null = null;
+    let name = preferredName || `media-${Date.now()}`;
+
+    try {
+      if (url.startsWith('indexeddb:')) {
+        const key = url.replace('indexeddb:', '');
+        const record = await getMediaRecord(key);
+        if (record && record.blob) {
+          blob = record.blob;
+          name = record.name || name;
+        }
+      } else if (url.startsWith('blob:')) {
+        try {
+          const res = await fetch(url);
+          blob = await res.blob();
+        } catch {
+          if (fallbackKey) {
+            const record = await getMediaRecord(fallbackKey);
+            if (record && record.blob) {
+              blob = record.blob;
+              name = record.name || name;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to extract media blob:', err);
+    }
+
+    if (!blob) {
+      return { url: null, error: `Unable to access local media file for cloud upload.` };
+    }
+
+    return await uploadRemoteMedia(blob, folder, name);
+  }
+
+  // 1. Audio track
+  if (copy.customAudioUrl && (copy.customAudioUrl.startsWith('blob:') || copy.customAudioUrl.startsWith('indexeddb:'))) {
+    const res = await uploadBlobOrIndexedDb(copy.customAudioUrl, 'audios', `audio-${copy.id}`, 'custom-audio.mp3');
+    if (res.url) {
+      copy.customAudioUrl = res.url;
+    } else {
+      return {
+        config: copy,
+        error: `Failed to upload custom audio to cloud: ${res.error || 'Upload failed'}`
+      };
+    }
+  }
+
+  // 2. Video message
+  if (copy.videoUrl && (copy.videoUrl.startsWith('blob:') || copy.videoUrl.startsWith('indexeddb:'))) {
+    const res = await uploadBlobOrIndexedDb(copy.videoUrl, 'videos', `video-${copy.id}`, 'custom-video.mp4');
+    if (res.url) {
+      copy.videoUrl = res.url;
+    } else {
+      return {
+        config: copy,
+        error: `Failed to upload video message to cloud: ${res.error || 'Upload failed'}`
+      };
+    }
+  }
+
+  // 3. Voice Note
+  if (copy.voiceMessageUrl && (copy.voiceMessageUrl.startsWith('blob:') || copy.voiceMessageUrl.startsWith('indexeddb:'))) {
+    const res = await uploadBlobOrIndexedDb(copy.voiceMessageUrl, 'audios', `voice-${copy.id}`, 'voice-note.webm');
+    if (res.url) {
+      copy.voiceMessageUrl = res.url;
+    } else {
+      return {
+        config: copy,
+        error: `Failed to upload voice note to cloud: ${res.error || 'Upload failed'}`
+      };
+    }
+  }
+
+  // 4. Profile Photo
+  if (copy.profilePhotoUrl && copy.profilePhotoUrl.startsWith('blob:')) {
+    const res = await uploadBlobOrIndexedDb(copy.profilePhotoUrl, 'images', undefined, 'profile-photo.jpg');
+    if (res.url) {
+      copy.profilePhotoUrl = res.url;
+    } else {
+      return {
+        config: copy,
+        error: `Failed to upload profile photo to cloud: ${res.error || 'Upload failed'}`
+      };
+    }
+  }
+
+  // 5. Video Thumbnail
+  if (copy.videoThumbnailUrl && copy.videoThumbnailUrl.startsWith('blob:')) {
+    const res = await uploadBlobOrIndexedDb(copy.videoThumbnailUrl, 'images', undefined, 'video-thumb.jpg');
+    if (res.url) {
+      copy.videoThumbnailUrl = res.url;
+    }
+  }
+
+  // 6. Gallery Photos
+  if (Array.isArray(copy.galleryPhotos)) {
+    for (let i = 0; i < copy.galleryPhotos.length; i++) {
+      const photo = copy.galleryPhotos[i];
+      if (photo.url && photo.url.startsWith('blob:')) {
+        const res = await uploadBlobOrIndexedDb(photo.url, 'images', undefined, `gallery-${i}.jpg`);
+        if (res.url) {
+          photo.url = res.url;
+        } else {
+          return {
+            config: copy,
+            error: `Failed to upload gallery photo #${i + 1} to cloud: ${res.error || 'Upload failed'}`
+          };
+        }
+      }
+    }
+  }
+
+  // 7. Timeline Memories
+  if (Array.isArray(copy.timelineMemories)) {
+    for (let i = 0; i < copy.timelineMemories.length; i++) {
+      const mem = copy.timelineMemories[i];
+      if (mem.imageUrl && mem.imageUrl.startsWith('blob:')) {
+        const res = await uploadBlobOrIndexedDb(mem.imageUrl, 'images', undefined, `memory-${i}.jpg`);
+        if (res.url) {
+          mem.imageUrl = res.url;
+        }
+      }
+    }
+  }
+
+  // Final check: temporary browser blob URLs are rejected before cloud save
+  const remainingBlobs: string[] = [];
+  if (copy.customAudioUrl?.startsWith('blob:') || copy.customAudioUrl?.startsWith('indexeddb:')) remainingBlobs.push('Audio');
+  if (copy.videoUrl?.startsWith('blob:') || copy.videoUrl?.startsWith('indexeddb:')) remainingBlobs.push('Video');
+  if (copy.voiceMessageUrl?.startsWith('blob:') || copy.voiceMessageUrl?.startsWith('indexeddb:')) remainingBlobs.push('Voice');
+  if (copy.profilePhotoUrl?.startsWith('blob:')) remainingBlobs.push('Profile Photo');
+  if (copy.galleryPhotos?.some((p) => p.url?.startsWith('blob:'))) remainingBlobs.push('Gallery Photo');
+
+  if (remainingBlobs.length > 0) {
+    return {
+      config: copy,
+      error: `Temporary browser blob URLs detected for: ${remainingBlobs.join(', ')}. All media must be uploaded to cloud storage before saving.`
+    };
+  }
+
+  return { config: copy };
+}
+
+/**
+ * Persists a birthday page to Supabase with proper user ownership and RLS enforcement.
+ * Saves the complete configuration including text, theme, colors, photos, audio, video,
+ * and sections.
+ */
+export async function saveRemoteBirthdayPage(
+  config: BirthdayPageConfig
+): Promise<{ success: boolean; error?: string; config?: BirthdayPageConfig }> {
   if (!supabase) {
     return { success: false, error: 'Supabase credentials not configured' };
   }
@@ -111,48 +298,69 @@ export async function saveRemoteBirthdayPage(config: BirthdayPageConfig): Promis
       if (anonErr || !anonData.user) {
         return { 
           success: false, 
-          error: `Please sign in or start a guest session to save pages to cloud: ${anonErr?.message || 'Authentication required'}` 
+          error: `Authentication required: please sign in or create an account to save your birthday surprise to the cloud (${anonErr?.message || 'Guest session unavailable'}).` 
         };
       }
       user = anonData.user;
     }
 
-    const payloadConfig: BirthdayPageConfig = {
-      ...config,
+    // Ensure all media URLs are persistent cloud storage URLs
+    const mediaRes = await ensurePersistentMedia(config);
+    if (mediaRes.error) {
+      return { success: false, error: mediaRes.error };
+    }
+
+    const cleanConfig: BirthdayPageConfig = {
+      ...mediaRes.config,
       userId: user.id,
       updatedAt: new Date().toISOString()
     };
 
-    // Ensure ephemeral browser-only blob: or indexeddb: URLs are not saved to remote cloud DB
-    const cleanConfig: BirthdayPageConfig = { ...payloadConfig };
-    if (cleanConfig.customAudioUrl && (cleanConfig.customAudioUrl.startsWith('blob:') || cleanConfig.customAudioUrl.startsWith('indexeddb:'))) {
-      cleanConfig.customAudioUrl = '';
-    }
-    if (cleanConfig.videoUrl && (cleanConfig.videoUrl.startsWith('blob:') || cleanConfig.videoUrl.startsWith('indexeddb:'))) {
-      cleanConfig.videoUrl = '';
-    }
-    if (cleanConfig.voiceMessageUrl && (cleanConfig.voiceMessageUrl.startsWith('blob:') || cleanConfig.voiceMessageUrl.startsWith('indexeddb:'))) {
-      cleanConfig.voiceMessageUrl = '';
-    }
+    // Sanitize slug
+    let cleanSlug = (cleanConfig.slug || cleanConfig.recipientName || 'birthday')
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]/g, '')
+      .replace(/^-+|-+$/g, '') || cleanConfig.id;
 
-    const { error } = await supabase
+    cleanConfig.slug = cleanSlug;
+
+    // Perform upsert with full JSON configuration
+    let { error } = await supabase
       .from('birthday_pages')
       .upsert({
         id: cleanConfig.id,
-        slug: cleanConfig.slug,
+        slug: cleanSlug,
         user_id: user.id,
-        recipient_name: cleanConfig.recipientName,
+        recipient_name: cleanConfig.recipientName || 'Friend',
         is_published: cleanConfig.isPublished ?? false,
         config: cleanConfig,
         updated_at: cleanConfig.updatedAt
       }, { onConflict: 'id' });
+
+    // Handle slug uniqueness constraint collision by appending unique suffix
+    if (error && (error.message.includes('birthday_pages_slug_key') || error.code === '23505')) {
+      cleanSlug = `${cleanSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
+      cleanConfig.slug = cleanSlug;
+      const retryRes = await supabase
+        .from('birthday_pages')
+        .upsert({
+          id: cleanConfig.id,
+          slug: cleanSlug,
+          user_id: user.id,
+          recipient_name: cleanConfig.recipientName || 'Friend',
+          is_published: cleanConfig.isPublished ?? false,
+          config: cleanConfig,
+          updated_at: cleanConfig.updatedAt
+        }, { onConflict: 'id' });
+      error = retryRes.error;
+    }
 
     if (error) {
       console.error('Supabase upsert error:', error);
       return { success: false, error: error.message };
     }
 
-    return { success: true };
+    return { success: true, config: cleanConfig };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error saving to Supabase';
     console.error('Failed to save to Supabase:', err);

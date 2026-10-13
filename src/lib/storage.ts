@@ -98,7 +98,12 @@ export function getPageById(idOrSlug: string): BirthdayPageConfig | null {
   return found || null;
 }
 
-export async function resolvePageAsync(idOrSlug: string): Promise<BirthdayPageConfig | null> {
+export async function resolvePageAsync(
+  idOrSlug: string,
+  options: { allowLocalFallback?: boolean } = {}
+): Promise<BirthdayPageConfig | null> {
+  const { allowLocalFallback = false } = options;
+
   // 1. Check if encoded in URL Hash or Query parameter (for instant zero-server sharing across phones)
   if (typeof window !== 'undefined') {
     let base64Payload: string | null = null;
@@ -130,30 +135,32 @@ export async function resolvePageAsync(idOrSlug: string): Promise<BirthdayPageCo
   if (isSupabaseConfigured) {
     try {
       const remote = await fetchRemoteBirthdayPage(idOrSlug);
-      const local = getPageById(idOrSlug);
-
       if (remote) {
-        // If remote has a timestamp >= local or local doesn't exist, use remote
-        if (!local || new Date(remote.updatedAt || 0) >= new Date(local.updatedAt || 0)) {
-          savePageLocally(remote);
-          const resolved = await resolveLocalMediaUrls(remote);
-          return resolved;
-        } else {
-          // Local is newer (e.g. user just edited in the same browser)
-          const resolved = await resolveLocalMediaUrls(local);
-          return resolved;
+        // If in editor mode (allowLocalFallback), verify if local edits are strictly newer
+        if (allowLocalFallback) {
+          const local = getPageById(idOrSlug);
+          if (local && new Date(local.updatedAt || 0) > new Date(remote.updatedAt || 0)) {
+            const resolved = await resolveLocalMediaUrls(local);
+            return resolved;
+          }
         }
+        savePageLocally(remote);
+        const resolved = await resolveLocalMediaUrls(remote);
+        return resolved;
       }
     } catch (err) {
       console.warn('Supabase resolve error, falling back to local:', err);
     }
   }
 
-  // 3. Check local storage cache
-  const local = getPageById(idOrSlug);
-  if (local) {
-    const resolved = await resolveLocalMediaUrls(local);
-    return resolved;
+  // 3. Local storage cache fallback ONLY when explicitly requested (e.g., creator in Editor Studio)
+  // For published share links, visitors must NEVER load DEFAULT_DEMO_CONFIG or arbitrary localStorage!
+  if (allowLocalFallback) {
+    const local = getPageById(idOrSlug);
+    if (local) {
+      const resolved = await resolveLocalMediaUrls(local);
+      return resolved;
+    }
   }
 
   return null;
@@ -259,9 +266,11 @@ export function savePageLocally(config: BirthdayPageConfig): { success: boolean;
 }
 
 /**
- * Unified save function: saves locally and syncs to Supabase if configured
+ * Unified save function: saves locally and syncs complete configuration to Supabase if configured
  */
-export async function savePage(config: BirthdayPageConfig): Promise<{ success: boolean; error?: string }> {
+export async function savePage(
+  config: BirthdayPageConfig
+): Promise<{ success: boolean; error?: string; config?: BirthdayPageConfig }> {
   const localRes = savePageLocally(config);
   if (!localRes.success) {
     return localRes;
@@ -275,18 +284,45 @@ export async function savePage(config: BirthdayPageConfig): Promise<{ success: b
         error: remoteRes.error || 'Failed to save to Supabase cloud'
       };
     }
+    if (remoteRes.config) {
+      savePageLocally(remoteRes.config);
+      return { success: true, config: remoteRes.config };
+    }
   }
 
-  return { success: true };
+  return { success: true, config };
 }
 
-export async function saveAndPublishPage(config: BirthdayPageConfig): Promise<{ success: boolean; url: string; error?: string }> {
+export async function saveAndPublishPage(
+  config: BirthdayPageConfig
+): Promise<{ success: boolean; url: string; config?: BirthdayPageConfig; error?: string }> {
+  let targetConfig = { ...config };
+
+  // Guarantee a unique ID if missing or demo
+  if (!targetConfig.id || targetConfig.id === DEFAULT_DEMO_CONFIG.id) {
+    targetConfig.id = `bday-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+  }
+
+  // Guarantee a unique slug if missing or demo
+  if (!targetConfig.slug || targetConfig.slug === DEFAULT_DEMO_CONFIG.slug) {
+    const cleanName = (targetConfig.recipientName || 'friend')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || 'surprise';
+    targetConfig.slug = `${cleanName}-${Math.floor(1000 + Math.random() * 9000)}`;
+  } else {
+    targetConfig.slug = targetConfig.slug
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]/g, '')
+      .replace(/(^-|-$)/g, '');
+  }
+
   const publishedConfig: BirthdayPageConfig = {
-    ...config,
+    ...targetConfig,
     isPublished: true,
     updatedAt: new Date().toISOString()
   };
-  
+
   const saveRes = await savePage(publishedConfig);
   if (!saveRes.success) {
     return {
@@ -296,14 +332,16 @@ export async function saveAndPublishPage(config: BirthdayPageConfig): Promise<{ 
     };
   }
 
+  const finalConfig = saveRes.config || publishedConfig;
   const origin = window.location.origin;
   const publicUrl = isSupabaseConfigured
-    ? `${origin}/b/${config.slug || config.id}`
-    : generateShareableDataUrl(publishedConfig);
+    ? `${origin}/b/${finalConfig.slug || finalConfig.id}`
+    : generateShareableDataUrl(finalConfig);
 
   return {
     success: true,
-    url: publicUrl
+    url: publicUrl,
+    config: finalConfig
   };
 }
 

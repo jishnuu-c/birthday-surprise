@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { BirthdayPageConfig } from '../../types';
 import { saveAndPublishPage, generateShareableDataUrl } from '../../lib/storage';
 import { isSupabaseConfigured } from '../../lib/supabase';
-import { Globe, Share2, Copy, Check, QrCode, Download, MessageCircle, CloudCheck, HardDrive, FileDown, FileUp, Sparkles, ExternalLink } from 'lucide-react';
+import { Globe, Share2, Copy, Check, QrCode, MessageCircle, CloudCheck, HardDrive, FileDown, FileUp, Sparkles, ExternalLink } from 'lucide-react';
 
 interface PublishShareTabProps {
   config: BirthdayPageConfig;
@@ -39,7 +39,11 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
         setStatusMessage(`❌ Error publishing page: ${result.error || 'Failed to save to cloud'}`);
         return;
       }
-      onUpdateConfig({ isPublished: true });
+      if (result.config) {
+        onUpdateConfig(result.config);
+      } else {
+        onUpdateConfig({ isPublished: true });
+      }
       setPublishedUrl(result.url);
       setStatusMessage('🎉 Surprise Page published successfully to cloud! Permanent link ready to share across all devices.');
     } catch (err: unknown) {
@@ -51,7 +55,32 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
     }
   };
 
-  const handleCopyUrl = () => {
+  const handleCopyUrl = async () => {
+    if (!config.isPublished) {
+      setIsPublishing(true);
+      setStatusMessage(null);
+      try {
+        const result = await saveAndPublishPage(config);
+        if (!result.success) {
+          setStatusMessage(`❌ Error publishing page before copying: ${result.error || 'Failed to save to cloud'}`);
+          setIsPublishing(false);
+          return;
+        }
+        if (result.config) onUpdateConfig(result.config);
+        setPublishedUrl(result.url);
+        navigator.clipboard.writeText(result.url);
+        setCopied(true);
+        setStatusMessage('🎉 Surprise Page published and share link copied to clipboard!');
+        setTimeout(() => setCopied(false), 2500);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error publishing page.';
+        setStatusMessage(`❌ Error: ${msg}`);
+      } finally {
+        setIsPublishing(false);
+      }
+      return;
+    }
+
     navigator.clipboard.writeText(publishedUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -64,8 +93,33 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
     setTimeout(() => setCopiedHash(false), 2500);
   };
 
-  const handleWhatsApp = () => {
-    const text = `🎂 A little birthday surprise created just for ${config.recipientName || 'you'}! Open your gift here: ${publishedUrl}`;
+  const handleWhatsApp = async () => {
+    let urlToShare = publishedUrl;
+    if (!config.isPublished) {
+      setIsPublishing(true);
+      setStatusMessage(null);
+      try {
+        const result = await saveAndPublishPage(config);
+        if (!result.success) {
+          setStatusMessage(`❌ Error publishing page before sharing: ${result.error || 'Failed to save to cloud'}`);
+          setIsPublishing(false);
+          return;
+        }
+        if (result.config) onUpdateConfig(result.config);
+        urlToShare = result.url;
+        setPublishedUrl(result.url);
+        setStatusMessage('🎉 Surprise Page published successfully to cloud!');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error publishing page.';
+        setStatusMessage(`❌ Error: ${msg}`);
+        setIsPublishing(false);
+        return;
+      } finally {
+        setIsPublishing(false);
+      }
+    }
+
+    const text = `🎂 A little birthday surprise created just for ${config.recipientName || 'you'}! Open your gift here: ${urlToShare}`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
 

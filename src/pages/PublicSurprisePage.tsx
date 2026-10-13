@@ -20,17 +20,21 @@ import { Sparkles, Heart, Gift, Lock, ArrowRight, HelpCircle } from 'lucide-reac
 
 export const PublicSurprisePage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
-  const [config, setConfig] = useState<BirthdayPageConfig | null>(() => {
-    // If on homepage without slug, default to demo
-    if (!slug) return DEFAULT_DEMO_CONFIG;
+  const isHomepageDemo = !slug;
 
-    // Instant synchronous bootstrap from hash if data is present
+  const [config, setConfig] = useState<BirthdayPageConfig | null>(() => {
+    // If on homepage without slug, display the sample demo
+    if (isHomepageDemo) return DEFAULT_DEMO_CONFIG;
+
+    // Instant synchronous bootstrap ONLY if portable #data= hash is present in URL
     if (typeof window !== 'undefined') {
-      if (window.location.hash.startsWith('#data=') || window.location.search.includes('data=')) {
+      const hash = window.location.hash;
+      const search = window.location.search;
+      if (hash.startsWith('#data=') || search.includes('data=')) {
         try {
-          const payload = window.location.hash.startsWith('#data=')
-            ? window.location.hash.replace('#data=', '')
-            : new URLSearchParams(window.location.search).get('data') || '';
+          const payload = hash.startsWith('#data=')
+            ? hash.replace('#data=', '')
+            : new URLSearchParams(search).get('data') || '';
           if (payload) {
             const json = decodeURIComponent(escape(atob(payload)));
             const parsed = JSON.parse(json) as BirthdayPageConfig;
@@ -43,11 +47,12 @@ export const PublicSurprisePage: React.FC = () => {
         }
       }
     }
-    const local = getPageById(slug);
-    return local || null;
+
+    // For public share links, NEVER initialize with DEFAULT_DEMO_CONFIG or localStorage!
+    return null;
   });
 
-  const [loading, setLoading] = useState<boolean>(() => !config);
+  const [loading, setLoading] = useState<boolean>(() => !isHomepageDemo && !config);
   const [notFound, setNotFound] = useState<boolean>(false);
   const [hasOpenedGift, setHasOpenedGift] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -59,7 +64,7 @@ export const PublicSurprisePage: React.FC = () => {
     let isMounted = true;
 
     async function loadData() {
-      // 1. If visiting root landing page (no slug specified), render the default demo
+      // 1. Root landing page without slug -> render demo sample
       if (!slug) {
         if (isMounted) {
           setConfig(DEFAULT_DEMO_CONFIG);
@@ -70,9 +75,13 @@ export const PublicSurprisePage: React.FC = () => {
         return;
       }
 
-      // 2. Target slug specified: resolve from Supabase remote database or portable hash
+      setLoading(true);
+      setNotFound(false);
+
+      // 2. Target slug or ID specified: fetch strictly from Supabase cloud database
+      // allowLocalFallback: false ensures visitors never see DEFAULT_DEMO_CONFIG or stale localStorage
       try {
-        const resolved = await resolvePageAsync(slug);
+        const resolved = await resolvePageAsync(slug, { allowLocalFallback: false });
         if (isMounted) {
           if (resolved) {
             setConfig(resolved);
@@ -82,7 +91,8 @@ export const PublicSurprisePage: React.FC = () => {
               setIsPasscodeUnlocked(true);
             }
           } else {
-            // Not found in Supabase or local cache
+            // Page does not exist or is not published in Supabase
+            setConfig(null);
             setNotFound(true);
           }
           setLoading(false);
@@ -90,6 +100,7 @@ export const PublicSurprisePage: React.FC = () => {
       } catch (err) {
         console.warn('Load data error:', err);
         if (isMounted) {
+          setConfig(null);
           setNotFound(true);
           setLoading(false);
         }

@@ -41,7 +41,38 @@ export const EditorPage: React.FC = () => {
     let isMounted = true;
 
     async function loadConfig() {
-      if (!id) return;
+      // 1. If visiting /editor with no ID, immediately initialize a new unique birthday page
+      if (!id) {
+        const created = createNewBirthdayPage('Best Friend');
+        if (user) created.userId = user.id;
+        if (isMounted) {
+          setConfig(created);
+          setIsLoading(false);
+          navigate(`/editor/${created.id}`, { replace: true });
+        }
+        return;
+      }
+
+      // 2. If visiting /editor with the default demo ID, fork it into a unique page so the demo is never overwritten
+      if (id === DEFAULT_DEMO_CONFIG.id) {
+        const forked: BirthdayPageConfig = {
+          ...DEFAULT_DEMO_CONFIG,
+          id: `bday-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
+          slug: `celebration-${Math.floor(1000 + Math.random() * 9000)}`,
+          isPublished: false,
+          userId: user?.id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        savePage(forked).catch(() => {});
+        if (isMounted) {
+          setConfig(forked);
+          setIsLoading(false);
+          navigate(`/editor/${forked.id}`, { replace: true });
+        }
+        return;
+      }
+
       setIsLoading(true);
 
       // Fast sync local load
@@ -50,8 +81,8 @@ export const EditorPage: React.FC = () => {
         setConfig(initial);
       }
 
-      // Full async resolution (resolves IndexedDB media blobs & Supabase remote)
-      const resolved = await resolvePageAsync(id);
+      // Full async resolution (creator studio allows local fallback for editing drafts)
+      const resolved = await resolvePageAsync(id, { allowLocalFallback: true });
       if (isMounted) {
         if (resolved) {
           setConfig(resolved);
@@ -74,7 +105,7 @@ export const EditorPage: React.FC = () => {
 
   // Unified save action with verified feedback
   const handleExplicitSave = useCallback(async (customConfig?: BirthdayPageConfig) => {
-    const target = customConfig || config;
+    const target = { ...(customConfig || config) };
     if (user && !target.userId) {
       target.userId = user.id;
     }
@@ -84,6 +115,9 @@ export const EditorPage: React.FC = () => {
     try {
       const res = await savePage(target);
       if (res.success) {
+        if (res.config) {
+          setConfig(res.config);
+        }
         setSaveStatus('saved');
         setHasUnsavedChanges(false);
         setSaveMessage('All changes saved successfully!');

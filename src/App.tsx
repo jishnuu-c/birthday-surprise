@@ -17,6 +17,7 @@ export const App: React.FC = () => {
 
           {/* Public personalized recipient routes (e.g. /b/sophia-25th) */}
           <Route path="/b/:slug" element={<PublicSurprisePage />} />
+          <Route path="/p/:slug" element={<PublicSurprisePage />} />
 
           {/* Creator Studio & Admin Editor */}
           <Route path="/editor" element={<EditorPage />} />
