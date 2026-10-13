@@ -162,20 +162,8 @@ export const EditorPage: React.FC = () => {
       if (res.success) {
         const savedConfig = res.config || configToSave;
         lastSavedConfigRef.current = savedConfig;
-        latestConfigRef.current = {
-          ...latestConfigRef.current,
-          id: savedConfig.id,
-          slug: savedConfig.slug,
-          userId: savedConfig.userId,
-          updatedAt: savedConfig.updatedAt
-        };
-        setConfig((prev) => ({
-          ...prev,
-          id: savedConfig.id,
-          slug: savedConfig.slug,
-          userId: savedConfig.userId,
-          updatedAt: savedConfig.updatedAt
-        }));
+        latestConfigRef.current = savedConfig;
+        setConfig(savedConfig);
 
         // If page ID changed (e.g. forked from another user's page to avoid RLS violation), update URL
         if (savedConfig.id !== id) {
@@ -394,11 +382,15 @@ export const EditorPage: React.FC = () => {
               href={publicUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 sm:px-3.5 py-1.5 rounded-full bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500/40 text-pink-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Open full page in new tab"
+              className={`px-3 sm:px-3.5 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                config.isPublished
+                  ? 'bg-pink-500/15 hover:bg-pink-500/25 border-pink-500/40 text-pink-300'
+                  : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300'
+              }`}
+              title={config.isPublished ? "Open live page in new tab" : "Preview draft link (Draft mode - not yet published to public)"}
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Open Live Link</span>
+              <span className="hidden sm:inline">{config.isPublished ? 'Open Live Link' : 'Draft Link'}</span>
             </a>
           </div>
         </div>
@@ -470,7 +462,25 @@ export const EditorPage: React.FC = () => {
                   <SectionManagerTab config={config} onChange={handleUpdateConfig} onSave={() => handleExplicitSave()} saveStatus={saveStatus} />
                 )}
                 {activeTab === 'publish' && (
-                  <PublishShareTab config={config} onUpdateConfig={handleUpdateConfig} />
+                  <PublishShareTab
+                    config={config}
+                    onUpdateConfig={handleUpdateConfig}
+                    onPublishSuccess={(publishedConfig) => {
+                      lastSavedConfigRef.current = publishedConfig;
+                      latestConfigRef.current = publishedConfig;
+                      setConfig(publishedConfig);
+                      setHasUnsavedChanges(false);
+                      setSaveStatus('saved');
+                      setSaveMessage('Surprise published successfully to cloud!');
+                      setTimeout(() => {
+                        setSaveStatus((s) => s === 'saved' ? 'idle' : s);
+                        setSaveMessage(null);
+                      }, 3000);
+                      if (publishedConfig.id !== id) {
+                        navigate(`/editor/${publishedConfig.id}`, { replace: true });
+                      }
+                    }}
+                  />
                 )}
               </div>
             </div>

@@ -2,6 +2,7 @@ import { BirthdayPageConfig } from '../types';
 import { DEFAULT_DEMO_CONFIG } from '../constants/presets';
 import { 
   fetchRemoteBirthdayPage, 
+  fetchRemoteBirthdayPageDetailed,
   fetchUserRemotePages,
   deleteRemoteBirthdayPage,
   isSupabaseConfigured, 
@@ -94,15 +95,30 @@ export async function getAllPagesAsync(): Promise<BirthdayPageConfig[]> {
 
 export function getPageById(idOrSlug: string): BirthdayPageConfig | null {
   const pages = getAllPages();
-  const found = pages.find(p => p.id === idOrSlug || p.slug === idOrSlug);
+  const lower = idOrSlug.toLowerCase().trim();
+  const found = pages.find(p => p.id === idOrSlug || p.slug === idOrSlug || p.slug?.toLowerCase() === lower);
   return found || null;
 }
 
-export async function resolvePageAsync(
+export interface ResolvedPageDetails {
+  config: BirthdayPageConfig | null;
+  status: 'success' | 'unpublished' | 'not_found' | 'error' | 'invalid_slug';
+  error?: string;
+}
+
+/**
+ * Resolves a birthday page with granular error and draft status differentiation.
+ * Avoids false 404s when the database encounters an error or when a draft is unpublished.
+ */
+export async function resolvePageDetailsAsync(
   idOrSlug: string,
-  options: { allowLocalFallback?: boolean } = {}
-): Promise<BirthdayPageConfig | null> {
-  const { allowLocalFallback = false } = options;
+  options: { allowLocalFallback?: boolean; forceFresh?: boolean } = {}
+): Promise<ResolvedPageDetails> {
+  const { allowLocalFallback = false, forceFresh = false } = options;
+
+  if (!idOrSlug || !idOrSlug.trim()) {
+    return { config: null, status: 'invalid_slug', error: 'No link identifier provided in URL' };
+  }
 
   // 1. Check if encoded in URL Hash or Query parameter (for instant zero-server sharing across phones)
   if (typeof window !== 'undefined') {
@@ -123,7 +139,7 @@ export async function resolvePageAsync(
         if (parsed && parsed.recipientName) {
           savePageLocally(parsed);
           const resolved = await resolveLocalMediaUrls(parsed);
-          return resolved;
+          return { config: resolved, status: 'success' };
         }
       } catch (e) {
         console.warn('Failed to parse data URL payload:', e);
@@ -131,39 +147,68 @@ export async function resolvePageAsync(
     }
   }
 
-  // 2. Try Remote Supabase if enabled (to get latest published theme and content across any device)
+  // 2. Query Supabase Cloud Database if enabled
   if (isSupabaseConfigured) {
     try {
-      const remote = await fetchRemoteBirthdayPage(idOrSlug);
-      if (remote) {
-        // If in editor mode (allowLocalFallback), verify if local edits are strictly newer
-        if (allowLocalFallback) {
-          const local = getPageById(idOrSlug);
-          if (local && new Date(local.updatedAt || 0) > new Date(remote.updatedAt || 0)) {
-            const resolved = await resolveLocalMediaUrls(local);
-            return resolved;
+      // Check fetchRemoteBirthdayPage first (supports unit test mocks and cached calls)
+      const remotePage = await fetchRemoteBirthdayPage(idOrSlug, forceFresh);
+      if (remotePage) {
+        if (remotePage.isPublished) {
+          // If in editor mode (allowLocalFallback), verify if local edits are strictly newer
+          if (allowLocalFallback) {
+            const local = getPageById(idOrSlug);
+            if (local && new Date(local.updatedAt || 0) > new Date(remotePage.updatedAt || 0)) {
+              const resolved = await resolveLocalMediaUrls(local);
+              return { config: resolved, status: 'success' };
+            }
           }
+          savePageLocally(remotePage);
+          const resolved = await resolveLocalMediaUrls(remotePage);
+          return { config: resolved, status: 'success' };
+        } else {
+          const resolved = await resolveLocalMediaUrls(remotePage);
+          return { config: resolved, status: 'unpublished' };
         }
-        savePageLocally(remote);
-        const resolved = await resolveLocalMediaUrls(remote);
-        return resolved;
       }
-    } catch (err) {
-      console.warn('Supabase resolve error, falling back to local:', err);
+
+      // If returned null, check whether it was due to a database/network error
+      const remoteRes = await fetchRemoteBirthdayPageDetailed(idOrSlug, forceFresh);
+      if (remoteRes.status === 'error') {
+        // Supabase network failure, rate limit HTTP 429, or PostgREST error - NOT a 404!
+        return { config: null, status: 'error', error: remoteRes.error };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to query database';
+      console.warn('Supabase resolve error:', err);
+      return { config: null, status: 'error', error: msg };
     }
   }
 
-  // 3. Local storage cache fallback ONLY when explicitly requested (e.g., creator in Editor Studio)
-  // For published share links, visitors must NEVER load DEFAULT_DEMO_CONFIG or arbitrary localStorage!
-  if (allowLocalFallback) {
-    const local = getPageById(idOrSlug);
-    if (local) {
+  // 3. Local storage check
+  const local = getPageById(idOrSlug);
+  if (local) {
+    // If allowLocalFallback is true (editor mode), return it as success
+    if (allowLocalFallback) {
       const resolved = await resolveLocalMediaUrls(local);
-      return resolved;
+      return { config: resolved, status: 'success' };
+    }
+    // If not in editor mode but local copy exists on this browser:
+    // It's an unpublished draft on the creator's machine
+    if (!local.isPublished) {
+      const resolved = await resolveLocalMediaUrls(local);
+      return { config: resolved, status: 'unpublished' };
     }
   }
 
-  return null;
+  return { config: null, status: 'not_found' };
+}
+
+export async function resolvePageAsync(
+  idOrSlug: string,
+  options: { allowLocalFallback?: boolean; forceFresh?: boolean } = {}
+): Promise<BirthdayPageConfig | null> {
+  const result = await resolvePageDetailsAsync(idOrSlug, options);
+  return result.config;
 }
 
 export async function resolveLocalMediaUrls(config: BirthdayPageConfig): Promise<BirthdayPageConfig> {

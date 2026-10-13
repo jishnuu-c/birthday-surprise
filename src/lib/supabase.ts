@@ -313,71 +313,119 @@ export function invalidateRemotePageCache(slugOrId?: string): void {
   }
 }
 
+export interface FetchBirthdayPageResult {
+  config: BirthdayPageConfig | null;
+  status: 'success' | 'unpublished' | 'not_found' | 'error';
+  error?: string;
+}
+
+const inFlightDetailedFetches = new Map<string, Promise<FetchBirthdayPageResult>>();
+
+/**
+ * Fetch a single birthday page by slug or ID with detailed status.
+ * Selects config, recipient_name, slug, is_published, id, updated_at.
+ * Handles database errors and rate limits distinctly from 404 not found.
+ */
+export async function fetchRemoteBirthdayPageDetailed(
+  slugOrId: string,
+  forceFresh = false
+): Promise<FetchBirthdayPageResult> {
+  if (!slugOrId || !slugOrId.trim()) {
+    return { config: null, status: 'not_found', error: 'No page slug or ID provided' };
+  }
+
+  if (!supabase) {
+    return { config: null, status: 'error', error: supabaseConfigError || 'Supabase credentials not configured' };
+  }
+
+  const key = slugOrId.trim();
+  const lowerKey = key.toLowerCase();
+
+  // 1. Check in-memory cache if not forcing fresh fetch
+  if (!forceFresh) {
+    const cached = remotePageCache.get(key) || remotePageCache.get(lowerKey);
+    if (cached && (Date.now() - cached.timestamp < PAGE_CACHE_TTL_MS)) {
+      return {
+        config: cached.config,
+        status: cached.config.isPublished ? 'success' : 'unpublished'
+      };
+    }
+  }
+
+  // 2. Return in-flight promise if query is already active
+  if (inFlightDetailedFetches.has(key)) {
+    return inFlightDetailedFetches.get(key)!;
+  }
+
+  const fetchPromise = (async (): Promise<FetchBirthdayPageResult> => {
+    try {
+      const orFilter = lowerKey !== key
+        ? `slug.eq.${lowerKey},slug.eq.${key},id.eq.${key}`
+        : `slug.eq.${lowerKey},id.eq.${lowerKey}`;
+
+      const { data, error } = await withRateLimitRetry(async () => {
+        return await supabase!
+          .from('birthday_pages')
+          .select('id, slug, recipient_name, is_published, config, updated_at')
+          .or(orFilter)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+      }, 3, 1000);
+
+      if (error) {
+        console.warn('Supabase query returned database error:', error.message);
+        return {
+          config: null,
+          status: 'error',
+          error: error.message || 'Database error while fetching birthday page'
+        };
+      }
+
+      if (data && data.length > 0 && data[0].config) {
+        const row = data[0];
+        const pageConfig = row.config as BirthdayPageConfig;
+        pageConfig.id = row.id || pageConfig.id;
+        pageConfig.slug = row.slug || pageConfig.slug;
+        pageConfig.recipientName = row.recipient_name || pageConfig.recipientName;
+        pageConfig.isPublished = row.is_published ?? pageConfig.isPublished;
+        pageConfig.updatedAt = row.updated_at || pageConfig.updatedAt;
+
+        // Cache result by key, lowercase key, id, and slug
+        const entry: CacheEntry = { config: pageConfig, timestamp: Date.now() };
+        remotePageCache.set(key, entry);
+        if (lowerKey !== key) remotePageCache.set(lowerKey, entry);
+        if (pageConfig.id) remotePageCache.set(pageConfig.id, entry);
+        if (pageConfig.slug) remotePageCache.set(pageConfig.slug.toLowerCase(), entry);
+
+        if (row.is_published === false) {
+          return { config: pageConfig, status: 'unpublished' };
+        }
+
+        return { config: pageConfig, status: 'success' };
+      }
+
+      return { config: null, status: 'not_found' };
+    } catch (err: unknown) {
+      console.warn('Failed to query remote birthday page from Supabase:', err);
+      const msg = err instanceof Error ? err.message : 'Network error loading birthday page';
+      return { config: null, status: 'error', error: msg };
+    } finally {
+      inFlightDetailedFetches.delete(key);
+    }
+  })();
+
+  inFlightDetailedFetches.set(key, fetchPromise);
+  return fetchPromise;
+}
+
 /**
  * Fetch a single published birthday page (or a page owned by the current user) by slug or ID.
  * Features in-memory caching, in-flight deduplication, and automatic HTTP 429 exponential backoff retry.
  * Never returns default demo data.
  */
 export async function fetchRemoteBirthdayPage(slugOrId: string, forceFresh = false): Promise<BirthdayPageConfig | null> {
-  if (!supabase) return null;
-  const key = slugOrId.trim();
-
-  // 1. Check in-memory cache if not forcing fresh fetch
-  if (!forceFresh) {
-    const cached = remotePageCache.get(key);
-    if (cached && (Date.now() - cached.timestamp < PAGE_CACHE_TTL_MS)) {
-      return cached.config;
-    }
-  }
-
-  // 2. Return in-flight promise if query is already active (prevents duplicate simultaneous calls)
-  if (inFlightFetches.has(key)) {
-    return inFlightFetches.get(key)!;
-  }
-
-  const fetchPromise = (async () => {
-    try {
-      const { data, error } = await withRateLimitRetry(async () => {
-        return await supabase!
-          .from('birthday_pages')
-          .select('id, slug, is_published, config, updated_at')
-          .or(`slug.eq.${key},id.eq.${key}`)
-          .order('updated_at', { ascending: false })
-          .limit(1);
-      }, 3, 1000);
-
-      if (error) {
-        console.warn('Supabase query returned error:', error.message);
-        return null;
-      }
-
-      if (data && data.length > 0 && data[0].config) {
-        const pageConfig = data[0].config as BirthdayPageConfig;
-        pageConfig.id = data[0].id || pageConfig.id;
-        pageConfig.slug = data[0].slug || pageConfig.slug;
-        pageConfig.isPublished = data[0].is_published ?? pageConfig.isPublished;
-        pageConfig.updatedAt = data[0].updated_at || pageConfig.updatedAt;
-
-        // Cache result by both lookup key and resolved id/slug
-        const entry: CacheEntry = { config: pageConfig, timestamp: Date.now() };
-        remotePageCache.set(key, entry);
-        if (pageConfig.id) remotePageCache.set(pageConfig.id, entry);
-        if (pageConfig.slug) remotePageCache.set(pageConfig.slug, entry);
-
-        return pageConfig;
-      }
-
-      return null;
-    } catch (err) {
-      console.warn('Failed to query remote birthday page from Supabase:', err);
-      return null;
-    } finally {
-      inFlightFetches.delete(key);
-    }
-  })();
-
-  inFlightFetches.set(key, fetchPromise);
-  return fetchPromise;
+  const result = await fetchRemoteBirthdayPageDetailed(slugOrId, forceFresh);
+  return result.config;
 }
 
 /**
@@ -626,20 +674,26 @@ export async function saveRemoteBirthdayPage(
 
     cleanConfig.slug = cleanSlug;
 
-    // Check whether the page already exists in Supabase (Requirement 3 & 4)
-    const { data: existingPage } = await withRateLimitRetry(async () => {
+    // Check whether the page already exists in Supabase by ID or SLUG
+    const { data: existingRows } = await withRateLimitRetry(async () => {
       return await supabase!
         .from('birthday_pages')
-        .select('id, user_id, slug')
-        .eq('id', cleanConfig.id)
-        .maybeSingle();
+        .select('id, user_id, slug, is_published')
+        .or(`id.eq.${cleanConfig.id},slug.eq.${cleanSlug}`)
+        .order('updated_at', { ascending: false })
+        .limit(2);
     }, 2, 800);
+
+    const existingPage = (existingRows && existingRows.length > 0)
+      ? (existingRows.find(r => r.id === cleanConfig.id) || existingRows[0])
+      : null;
 
     let error: { message: string; code?: string } | null = null;
 
     if (existingPage) {
-      // 1. EXISTING PAGE: Use UPDATE with the existing page ID
+      // 1. EXISTING PAGE: Use UPDATE with the existing row ID
       if (existingPage.user_id === user.id || !existingPage.user_id) {
+        cleanConfig.id = existingPage.id; // Keep ID consistent with database row
         const updateRes = await withRateLimitRetry(async () => {
           return await supabase!
             .from('birthday_pages')
@@ -651,7 +705,7 @@ export async function saveRemoteBirthdayPage(
               config: cleanConfig,
               updated_at: cleanConfig.updatedAt
             })
-            .eq('id', cleanConfig.id);
+            .eq('id', existingPage.id);
         }, 2, 800);
         error = updateRes.error;
       } else {
@@ -713,7 +767,7 @@ export async function saveRemoteBirthdayPage(
               config: cleanConfig,
               updated_at: cleanConfig.updatedAt
             })
-            .eq('id', cleanConfig.id);
+            .eq('id', existingPage.id);
         }, 2, 800);
         error = retryUpdate.error;
       } else {
@@ -743,7 +797,10 @@ export async function saveRemoteBirthdayPage(
     // Synchronize in-memory cache so subsequent reads do not trigger duplicate network queries
     const entry: CacheEntry = { config: cleanConfig, timestamp: Date.now() };
     remotePageCache.set(cleanConfig.id, entry);
-    if (cleanConfig.slug) remotePageCache.set(cleanConfig.slug, entry);
+    if (cleanConfig.slug) {
+      remotePageCache.set(cleanConfig.slug, entry);
+      remotePageCache.set(cleanConfig.slug.toLowerCase(), entry);
+    }
 
     return { success: true, config: cleanConfig };
   } catch (err: unknown) {

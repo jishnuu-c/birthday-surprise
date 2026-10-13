@@ -83,9 +83,13 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         {/* Cloud vs Portable Status Badge */}
         <div className="mb-4 flex items-center justify-center">
           {isSupabaseConfigured ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Cloud Synchronized (Live Database)
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border ${
+              config.isPublished
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${config.isPublished ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              {config.isPublished ? 'Cloud Synchronized (Published Live)' : 'Draft Mode (Not Published to Public Yet)'}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8C982]/15 border border-[#E8C982]/30 text-[#E8C982] text-[11px] font-semibold">
@@ -94,6 +98,16 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             </span>
           )}
         </div>
+
+        {/* Unpublished Draft Warning Notice */}
+        {!config.isPublished && (
+          <div className="mb-4 p-3 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-2.5 text-left">
+            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+            <div className="flex-1 text-[11px] leading-relaxed">
+              <strong>Important:</strong> This page is currently an unpublished draft. Click <strong>"Publish Surprise Page"</strong> in the editor so your recipient can view it without logging in!
+            </div>
+          </div>
+        )}
 
         {/* QR Code Card */}
         <div className="flex flex-col items-center justify-center p-4 sm:p-6 rounded-2xl bg-white text-slate-900 shadow-xl mb-5 sm:mb-6 mx-auto max-w-full">

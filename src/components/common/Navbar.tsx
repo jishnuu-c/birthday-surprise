@@ -56,11 +56,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           {isEditor ? (
             <Link
               to={`/b/${currentSlug}`}
-              className="px-2.5 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold bg-pink-500/15 hover:bg-pink-500/25 text-pink-300 border border-pink-500/40 flex items-center gap-1.5 transition-all"
-              title="Preview Live Page"
+              className={`px-2.5 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 transition-all ${
+                config.isPublished
+                  ? 'bg-pink-500/15 hover:bg-pink-500/25 text-pink-300 border-pink-500/40'
+                  : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border-amber-500/40'
+              }`}
+              title={config.isPublished ? "Preview Live Page" : "Preview Draft Link"}
             >
               <Eye className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden xs:inline">Live View</span>
+              <span className="hidden xs:inline">{config.isPublished ? 'Live View' : 'Draft View'}</span>
             </Link>
           ) : (
             <Link

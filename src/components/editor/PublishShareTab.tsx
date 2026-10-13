@@ -8,9 +8,10 @@ import { Globe, Share2, Copy, Check, QrCode, MessageCircle, CloudCheck, HardDriv
 interface PublishShareTabProps {
   config: BirthdayPageConfig;
   onUpdateConfig: (updated: Partial<BirthdayPageConfig>) => void;
+  onPublishSuccess?: (publishedConfig: BirthdayPageConfig) => void;
 }
 
-export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpdateConfig }) => {
+export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpdateConfig, onPublishSuccess }) => {
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState(() => {
     return isSupabaseConfigured
@@ -40,7 +41,11 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
         return;
       }
       if (result.config) {
-        onUpdateConfig(result.config);
+        if (onPublishSuccess) {
+          onPublishSuccess(result.config);
+        } else {
+          onUpdateConfig(result.config);
+        }
       } else {
         onUpdateConfig({ isPublished: true });
       }
@@ -66,7 +71,10 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
           setIsPublishing(false);
           return;
         }
-        if (result.config) onUpdateConfig(result.config);
+        if (result.config) {
+          if (onPublishSuccess) onPublishSuccess(result.config);
+          else onUpdateConfig(result.config);
+        }
         setPublishedUrl(result.url);
         navigator.clipboard.writeText(result.url);
         setCopied(true);
@@ -105,7 +113,10 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
           setIsPublishing(false);
           return;
         }
-        if (result.config) onUpdateConfig(result.config);
+        if (result.config) {
+          if (onPublishSuccess) onPublishSuccess(result.config);
+          else onUpdateConfig(result.config);
+        }
         urlToShare = result.url;
         setPublishedUrl(result.url);
         setStatusMessage('🎉 Surprise Page published successfully to cloud!');
