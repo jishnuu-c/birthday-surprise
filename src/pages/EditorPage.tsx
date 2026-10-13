@@ -72,7 +72,7 @@ export const EditorPage: React.FC = () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
-        savePage(forked).catch(() => {});
+        savePageLocally(forked);
         if (isMounted) {
           setConfig(forked);
           lastSavedConfigRef.current = forked;
@@ -103,6 +103,7 @@ export const EditorPage: React.FC = () => {
         } else if (!initial) {
           const created = createNewBirthdayPage('Best Friend');
           if (userRef.current) created.userId = userRef.current.id;
+          savePageLocally(created);
           setConfig(created);
           lastSavedConfigRef.current = created;
           latestConfigRef.current = created;
@@ -125,7 +126,7 @@ export const EditorPage: React.FC = () => {
       latestConfigRef.current = customConfig;
     }
 
-    // Requirement 4: Prevent duplicate and overlapping save requests
+    // Requirement 2 & 4: Prevent duplicate and overlapping save requests
     // If a save is already in progress, queue the latest changes to be saved once the active save completes
     if (isSavingRef.current) {
       queuedSaveRef.current = true;
@@ -134,7 +135,7 @@ export const EditorPage: React.FC = () => {
 
     const target = latestConfigRef.current;
 
-    // Requirement 3: Save only when data has actually changed from the last successfully saved version
+    // Requirement 3 & 6: Save only when data has actually changed from the last successfully saved version
     if (lastSavedConfigRef.current && areConfigsEqual(target, lastSavedConfigRef.current)) {
       setHasUnsavedChanges(false);
       return;
@@ -144,6 +145,8 @@ export const EditorPage: React.FC = () => {
     queuedSaveRef.current = false;
     setSaveStatus('saving');
     setSaveMessage(null);
+
+    let saveSucceeded = false;
 
     try {
       const configToSave = {
@@ -157,6 +160,7 @@ export const EditorPage: React.FC = () => {
 
       const res = await savePage(configToSave);
       if (res.success) {
+        saveSucceeded = true;
         const savedConfig = res.config || configToSave;
         lastSavedConfigRef.current = savedConfig;
         latestConfigRef.current = {
@@ -174,6 +178,11 @@ export const EditorPage: React.FC = () => {
           updatedAt: savedConfig.updatedAt
         }));
 
+        // If the ID was updated (e.g. forked from another user's page to avoid RLS violation), update URL
+        if (savedConfig.id !== id) {
+          navigate(`/editor/${savedConfig.id}`, { replace: true });
+        }
+
         setSaveStatus('saved');
         setHasUnsavedChanges(false);
         setSaveMessage('All changes saved successfully!');
@@ -183,7 +192,7 @@ export const EditorPage: React.FC = () => {
         }, 3000);
       } else {
         setSaveStatus('error');
-        setSaveMessage(res.error || 'Failed to save changes. Will retry automatically.');
+        setSaveMessage(res.error || 'Failed to save changes. Please try again.');
       }
     } catch (err: unknown) {
       console.error('Save error:', err);
@@ -192,21 +201,24 @@ export const EditorPage: React.FC = () => {
       setSaveMessage(msg);
     } finally {
       isSavingRef.current = false;
-      // Requirement 4: If user made additional changes while save was in progress,
-      // save the latest changes safely after current request completes
-      if (
-        queuedSaveRef.current ||
-        (latestConfigRef.current && !areConfigsEqual(latestConfigRef.current, lastSavedConfigRef.current))
-      ) {
+      // Requirement 2 & 4: Only process queued save if new changes were made while in-flight
+      // Never loop-retry infinitely on error to avoid 429 rate limits
+      if (queuedSaveRef.current && saveSucceeded) {
         queuedSaveRef.current = false;
-        window.setTimeout(() => {
-          executeSavePipeline();
-        }, 200);
+        if (latestConfigRef.current && !areConfigsEqual(latestConfigRef.current, lastSavedConfigRef.current)) {
+          window.setTimeout(() => {
+            executeSavePipeline();
+          }, 300);
+        }
+      } else {
+        queuedSaveRef.current = false;
       }
     }
-  }, []);
+  }, [id, navigate]);
 
   const handleExplicitSave = useCallback((customConfig?: BirthdayPageConfig) => {
+    // Prevent duplicate requests from repeated button clicks while save is in flight
+    if (isSavingRef.current) return;
     if (autoSaveTimerRef.current) {
       window.clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;

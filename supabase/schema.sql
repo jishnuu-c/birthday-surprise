@@ -73,12 +73,12 @@ WITH CHECK (
     auth.uid() = user_id
 );
 
--- (C) UPDATE: Owners can only update pages they own.
+-- (C) UPDATE: Owners can only update pages they own (or claim unowned legacy pages).
 CREATE POLICY "Users can update their own birthday pages"
 ON public.birthday_pages
 FOR UPDATE
 TO authenticated
-USING (auth.uid() = user_id)
+USING (auth.uid() = user_id OR user_id IS NULL)
 WITH CHECK (auth.uid() = user_id);
 
 -- (D) DELETE: Owners can only delete pages they own.

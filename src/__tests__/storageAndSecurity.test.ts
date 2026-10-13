@@ -15,7 +15,9 @@ import {
   getSupabaseConfigError,
   isRateLimitError,
   getRetryDelayMs,
-  withRateLimitRetry
+  withRateLimitRetry,
+  saveRemoteBirthdayPage,
+  supabase
 } from '../lib/supabase';
 import { BirthdayPageConfig } from '../types';
 
@@ -277,3 +279,43 @@ describe('Auto-Save Optimization & Dirty Checking (areConfigsEqual)', () => {
     expect(areConfigsEqual(null, page)).toBe(false);
   });
 });
+
+describe('Selective INSERT vs UPDATE Database Operations (Requirements 3 & 4)', () => {
+  it('differentiates between new page creation (INSERT) and existing page edits (UPDATE)', async () => {
+    if (!supabase) return;
+
+    const testId = `bday-test-unit-${Date.now()}`;
+    const newPage = createNewBirthdayPage('Unit Test Recipient');
+    newPage.id = testId;
+    newPage.slug = `test-slug-unit-${Date.now()}`;
+
+    // 1. First save: Page does NOT exist in DB, must perform INSERT
+    const createResult = await saveRemoteBirthdayPage(newPage);
+    expect(createResult.success).toBe(true);
+    expect(createResult.config?.id).toBe(testId);
+
+    // 2. Second save: Page DOES exist in DB, must perform UPDATE on existing ID
+    const updatedPage: BirthdayPageConfig = {
+      ...createResult.config!,
+      recipientName: 'Unit Test Recipient Updated'
+    };
+    const updateResult = await saveRemoteBirthdayPage(updatedPage);
+    expect(updateResult.success).toBe(true);
+    expect(updateResult.config?.id).toBe(testId);
+    expect(updateResult.config?.recipientName).toBe('Unit Test Recipient Updated');
+
+    // 3. Verify in database that only ONE row exists with this ID (no duplicates created)
+    const { data: rows } = await supabase
+      .from('birthday_pages')
+      .select('id, recipient_name')
+      .eq('id', testId);
+
+    expect(rows).toBeDefined();
+    expect(rows?.length).toBe(1);
+    expect(rows?.[0].recipient_name).toBe('Unit Test Recipient Updated');
+
+    // Clean up
+    await supabase.from('birthday_pages').delete().eq('id', testId);
+  });
+});
+

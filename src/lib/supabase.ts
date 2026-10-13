@@ -626,43 +626,117 @@ export async function saveRemoteBirthdayPage(
 
     cleanConfig.slug = cleanSlug;
 
-    // Perform upsert with full JSON configuration, protected with 429 exponential backoff retry
-    let { error } = await withRateLimitRetry(async () => {
+    // Check whether the page already exists in Supabase (Requirement 3 & 4)
+    const { data: existingPage } = await withRateLimitRetry(async () => {
       return await supabase!
         .from('birthday_pages')
-        .upsert({
-          id: cleanConfig.id,
-          slug: cleanSlug,
-          user_id: user.id,
-          recipient_name: cleanConfig.recipientName || 'Friend',
-          is_published: cleanConfig.isPublished ?? false,
-          config: cleanConfig,
-          updated_at: cleanConfig.updatedAt
-        }, { onConflict: 'id' });
-    }, 3, 1200);
+        .select('id, user_id, slug')
+        .eq('id', cleanConfig.id)
+        .maybeSingle();
+    }, 2, 800);
 
-    // Handle slug uniqueness constraint collision by appending unique suffix
-    if (error && (error.message.includes('birthday_pages_slug_key') || error.code === '23505')) {
-      cleanSlug = `${cleanSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
-      cleanConfig.slug = cleanSlug;
-      const retryRes = await withRateLimitRetry(async () => {
+    let error: { message: string; code?: string } | null = null;
+
+    if (existingPage) {
+      // 1. EXISTING PAGE: Use UPDATE with the existing page ID
+      if (existingPage.user_id === user.id || !existingPage.user_id) {
+        const updateRes = await withRateLimitRetry(async () => {
+          return await supabase!
+            .from('birthday_pages')
+            .update({
+              slug: cleanSlug,
+              user_id: user.id,
+              recipient_name: cleanConfig.recipientName || 'Friend',
+              is_published: cleanConfig.isPublished ?? false,
+              config: cleanConfig,
+              updated_at: cleanConfig.updatedAt
+            })
+            .eq('id', cleanConfig.id);
+        }, 2, 800);
+        error = updateRes.error;
+      } else {
+        // Page exists but belongs to another user (e.g. opened shared link or different account)
+        // Fork safely into a new page owned by current user to avoid 403 RLS violation
+        cleanConfig.id = `bday-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+        cleanSlug = `${cleanSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
+        cleanConfig.slug = cleanSlug;
+        cleanConfig.userId = user.id;
+
+        const insertRes = await withRateLimitRetry(async () => {
+          return await supabase!
+            .from('birthday_pages')
+            .insert({
+              id: cleanConfig.id,
+              slug: cleanSlug,
+              user_id: user.id,
+              recipient_name: cleanConfig.recipientName || 'Friend',
+              is_published: cleanConfig.isPublished ?? false,
+              config: cleanConfig,
+              created_at: cleanConfig.createdAt || new Date().toISOString(),
+              updated_at: cleanConfig.updatedAt
+            });
+        }, 2, 800);
+        error = insertRes.error;
+      }
+    } else {
+      // 2. NEW PAGE: Use INSERT only when creating a new birthday page
+      const insertRes = await withRateLimitRetry(async () => {
         return await supabase!
           .from('birthday_pages')
-          .upsert({
+          .insert({
             id: cleanConfig.id,
             slug: cleanSlug,
             user_id: user.id,
             recipient_name: cleanConfig.recipientName || 'Friend',
             is_published: cleanConfig.isPublished ?? false,
             config: cleanConfig,
+            created_at: cleanConfig.createdAt || new Date().toISOString(),
             updated_at: cleanConfig.updatedAt
-          }, { onConflict: 'id' });
-      }, 3, 1200);
-      error = retryRes.error;
+          });
+      }, 2, 800);
+      error = insertRes.error;
+    }
+
+    // Handle slug uniqueness constraint collision by appending unique suffix
+    if (error && (error.message.includes('birthday_pages_slug_key') || error.code === '23505')) {
+      cleanSlug = `${cleanSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
+      cleanConfig.slug = cleanSlug;
+      if (existingPage && (existingPage.user_id === user.id || !existingPage.user_id)) {
+        const retryUpdate = await withRateLimitRetry(async () => {
+          return await supabase!
+            .from('birthday_pages')
+            .update({
+              slug: cleanSlug,
+              user_id: user.id,
+              recipient_name: cleanConfig.recipientName || 'Friend',
+              is_published: cleanConfig.isPublished ?? false,
+              config: cleanConfig,
+              updated_at: cleanConfig.updatedAt
+            })
+            .eq('id', cleanConfig.id);
+        }, 2, 800);
+        error = retryUpdate.error;
+      } else {
+        const retryInsert = await withRateLimitRetry(async () => {
+          return await supabase!
+            .from('birthday_pages')
+            .insert({
+              id: cleanConfig.id,
+              slug: cleanSlug,
+              user_id: user.id,
+              recipient_name: cleanConfig.recipientName || 'Friend',
+              is_published: cleanConfig.isPublished ?? false,
+              config: cleanConfig,
+              created_at: cleanConfig.createdAt || new Date().toISOString(),
+              updated_at: cleanConfig.updatedAt
+            });
+        }, 2, 800);
+        error = retryInsert.error;
+      }
     }
 
     if (error) {
-      console.error('Supabase upsert error:', error);
+      console.error('Supabase save error:', error);
       return { success: false, error: error.message };
     }
 
