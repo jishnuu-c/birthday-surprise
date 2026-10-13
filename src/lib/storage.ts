@@ -1,7 +1,13 @@
 import { BirthdayPageConfig } from '../types';
 import { DEFAULT_DEMO_CONFIG } from '../constants/presets';
-import { fetchRemoteBirthdayPage, isSupabaseConfigured, saveRemoteBirthdayPage } from './supabase';
-import { getMediaBlobUrl, getMediaRecord, deleteMediaBlob } from './mediaDb';
+import { 
+  fetchRemoteBirthdayPage, 
+  fetchUserRemotePages,
+  deleteRemoteBirthdayPage,
+  isSupabaseConfigured, 
+  saveRemoteBirthdayPage 
+} from './supabase';
+import { getMediaBlobUrl, deleteMediaBlob } from './mediaDb';
 
 const STORAGE_KEY_PAGES = 'birthday_magic_pages_v1';
 const STORAGE_KEY_CURRENT = 'birthday_magic_active_page_id';
@@ -52,6 +58,37 @@ export function getAllPages(): BirthdayPageConfig[] {
     return migrated;
   } catch {
     return [DEFAULT_DEMO_CONFIG];
+  }
+}
+
+export async function getAllPagesAsync(): Promise<BirthdayPageConfig[]> {
+  const localPages = getAllPages();
+  if (!isSupabaseConfigured) {
+    return localPages;
+  }
+  try {
+    const remotePages = await fetchUserRemotePages();
+    if (!remotePages || remotePages.length === 0) {
+      return localPages;
+    }
+    const map = new Map<string, BirthdayPageConfig>();
+    localPages.forEach((p) => map.set(p.id, p));
+    remotePages.forEach((p) => {
+      const existing = map.get(p.id);
+      if (!existing || new Date(p.updatedAt || 0) >= new Date(existing.updatedAt || 0)) {
+        map.set(p.id, p);
+      }
+    });
+    const merged = Array.from(map.values());
+    try {
+      localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(merged));
+    } catch {
+      // ignore
+    }
+    return merged;
+  } catch (err) {
+    console.warn('Failed to fetch remote pages for dashboard:', err);
+    return localPages;
   }
 }
 
@@ -234,8 +271,8 @@ export async function savePage(config: BirthdayPageConfig): Promise<{ success: b
     const remoteRes = await saveRemoteBirthdayPage(config);
     if (!remoteRes.success) {
       return {
-        success: true, // Saved locally at least
-        error: `Saved locally, but remote sync noticed: ${remoteRes.error}`
+        success: false,
+        error: remoteRes.error || 'Failed to save to Supabase cloud'
       };
     }
   }
@@ -251,6 +288,13 @@ export async function saveAndPublishPage(config: BirthdayPageConfig): Promise<{ 
   };
   
   const saveRes = await savePage(publishedConfig);
+  if (!saveRes.success) {
+    return {
+      success: false,
+      url: '',
+      error: saveRes.error || 'Failed to publish to cloud'
+    };
+  }
 
   const origin = window.location.origin;
   const publicUrl = isSupabaseConfigured
@@ -258,9 +302,8 @@ export async function saveAndPublishPage(config: BirthdayPageConfig): Promise<{ 
     : generateShareableDataUrl(publishedConfig);
 
   return {
-    success: saveRes.success,
-    url: publicUrl,
-    error: saveRes.error
+    success: true,
+    url: publicUrl
   };
 }
 
@@ -283,7 +326,7 @@ export function generateShareableDataUrl(config: BirthdayPageConfig): string {
   }
 }
 
-export function deletePage(id: string): void {
+export async function deletePage(id: string): Promise<void> {
   const pages = getAllPages().filter(p => p.id !== id);
   try {
     localStorage.setItem(STORAGE_KEY_PAGES, JSON.stringify(pages));
@@ -293,6 +336,12 @@ export function deletePage(id: string): void {
     deleteMediaBlob(`voice-${id}`).catch(() => {});
   } catch {
     // ignore
+  }
+
+  if (isSupabaseConfigured) {
+    await deleteRemoteBirthdayPage(id).catch(err => {
+      console.warn('Failed to delete remote page:', err);
+    });
   }
 }
 

@@ -1,48 +1,79 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BirthdayPageConfig } from '../types';
-import { getAllPages, createNewBirthdayPage, deletePage, savePageLocally } from '../lib/storage';
-import { Plus, Edit3, Eye, Copy, Trash2, CopyPlus, Gift, Calendar, Check, Search, Heart } from 'lucide-react';
+import { 
+  getAllPages, 
+  getAllPagesAsync, 
+  createNewBirthdayPage, 
+  deletePage, 
+  savePage 
+} from '../lib/storage';
+import { useAuth } from '../context/AuthContext';
+import { 
+  Plus, Edit3, Eye, Copy, Trash2, CopyPlus, Gift, Calendar, 
+  Check, Search, Heart, RefreshCw,
+  LogIn, LogOut, Sparkles, User
+} from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user, isConfigured, openAuthModal, signOut } = useAuth();
   const [pages, setPages] = useState<BirthdayPageConfig[]>(getAllPages());
+  const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [newRecipientName, setNewRecipientName] = useState('');
 
-  const refreshPages = () => {
-    setPages(getAllPages());
+  const refreshPages = async () => {
+    setIsLoading(true);
+    try {
+      const all = await getAllPagesAsync();
+      setPages(all);
+    } catch (err) {
+      console.warn('Failed to refresh dashboard pages:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleCreateNew = (e: React.FormEvent) => {
+  useEffect(() => {
+    refreshPages();
+  }, [user]);
+
+  const handleCreateNew = async (e: React.FormEvent) => {
     e.preventDefault();
     const name = newRecipientName.trim() || 'My Best Friend';
     const created = createNewBirthdayPage(name);
+    if (user) {
+      created.userId = user.id;
+    }
+    // Sync to cloud if configured
+    await savePage(created).catch(() => {});
     setShowNewModal(false);
     setNewRecipientName('');
     navigate(`/editor/${created.id}`);
   };
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete the birthday page for "${name}"?`)) {
-      deletePage(id);
-      refreshPages();
+      await deletePage(id);
+      await refreshPages();
     }
   };
 
-  const handleClone = (page: BirthdayPageConfig) => {
+  const handleClone = async (page: BirthdayPageConfig) => {
     const cloned: BirthdayPageConfig = {
       ...page,
       id: `bday-${Date.now().toString(36)}`,
       slug: `${page.slug}-copy-${Math.floor(100 + Math.random() * 900)}`,
       recipientName: `${page.recipientName} (Copy)`,
+      userId: user?.id,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    savePageLocally(cloned);
-    refreshPages();
+    await savePage(cloned);
+    await refreshPages();
   };
 
   const handleCopyLink = (slugOrId: string) => {
@@ -58,7 +89,7 @@ export const DashboardPage: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-pink-500 selection:text-white">
       {/* Top Header */}
       <header className="bg-slate-900/80 border-b border-white/10 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
@@ -69,14 +100,56 @@ export const DashboardPage: React.FC = () => {
             <span className="font-extrabold text-white text-sm sm:text-base truncate">Birthday Magic Studio</span>
           </Link>
 
-          <button
-            onClick={() => setShowNewModal(true)}
-            className="px-3.5 sm:px-4 py-2 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-pink-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
-          >
-            <Plus className="w-4 h-4 shrink-0" />
-            <span className="hidden xs:inline">Create New Surprise</span>
-            <span className="xs:hidden inline">New</span>
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Supabase Connection Status Badge */}
+            <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px]">
+              {isConfigured ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-emerald-300 font-medium">Supabase Cloud</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  <span className="text-amber-300 font-medium">Local Storage</span>
+                </>
+              )}
+            </div>
+
+            {/* User Account Controls */}
+            {user ? (
+              <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-xs">
+                <User className="w-3.5 h-3.5 text-[#E8C982]" />
+                <span className="text-slate-200 text-xs hidden sm:inline max-w-[120px] truncate">
+                  {user.email || 'Guest User'}
+                </span>
+                <button
+                  onClick={() => signOut()}
+                  className="p-1 rounded text-slate-400 hover:text-rose-400 cursor-pointer"
+                  title="Log Out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={openAuthModal}
+                className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-semibold text-slate-200 flex items-center gap-1.5 cursor-pointer transition-all"
+              >
+                <LogIn className="w-3.5 h-3.5 text-[#E8C982]" />
+                <span>Sign In</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setShowNewModal(true)}
+              className="px-3.5 sm:px-4 py-2 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-pink-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4 shrink-0" />
+              <span className="hidden xs:inline">Create New Surprise</span>
+              <span className="xs:hidden inline">New</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -85,9 +158,19 @@ export const DashboardPage: React.FC = () => {
         {/* Title & Search Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8">
           <div>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-white font-elegant">
-              Your Birthday Surprise Pages
-            </h1>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-white font-elegant">
+                Your Birthday Surprise Pages
+              </h1>
+              <button
+                onClick={refreshPages}
+                disabled={isLoading}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                title="Refresh pages"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-pink-400' : ''}`} />
+              </button>
+            </div>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
               Create and manage personalized interactive experiences for everyone you cherish.
             </p>
@@ -100,10 +183,50 @@ export const DashboardPage: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by name or slug..."
-              className="w-full bg-slate-900 border border-white/10 focus:border-pink-500 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-100 outline-none"
+              className="w-full bg-slate-900 border border-white/10 focus:border-pink-500 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-100 outline-none transition-all"
             />
           </div>
         </div>
+
+        {/* Informational Banner if Not Logged In */}
+        {isConfigured && !user && (
+          <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-[#E8C982]/10 border border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-5 h-5 text-[#E8C982] shrink-0" />
+              <div>
+                <h4 className="text-xs sm:text-sm font-bold text-white">Cloud Sync Enabled</h4>
+                <p className="text-[11px] sm:text-xs text-slate-400">
+                  Sign in or start a guest session to save your surprises permanently to your account across all devices.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={openAuthModal}
+              className="px-4 py-2 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer"
+            >
+              Sign In / Guest Session
+            </button>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {filteredPages.length === 0 && (
+          <div className="rounded-3xl bg-slate-900/60 border border-white/10 p-12 text-center max-w-md mx-auto my-8">
+            <div className="w-14 h-14 rounded-2xl bg-pink-500/10 text-pink-400 flex items-center justify-center mx-auto mb-4">
+              <Gift className="w-7 h-7" />
+            </div>
+            <h3 className="text-base font-bold text-white mb-1">No pages found</h3>
+            <p className="text-xs text-slate-400 mb-5">
+              {searchQuery ? 'No birthday surprises match your search query.' : 'You haven’t created any birthday surprises yet.'}
+            </p>
+            <button
+              onClick={() => setShowNewModal(true)}
+              className="px-5 py-2.5 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-xs font-bold transition-all shadow-lg shadow-pink-500/25 cursor-pointer"
+            >
+              Create First Surprise ✨
+            </button>
+          </div>
+        )}
 
         {/* Pages Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">

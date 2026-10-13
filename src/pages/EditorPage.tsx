@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { BirthdayPageConfig } from '../types';
 import { getPageById, resolvePageAsync, savePage, createNewBirthdayPage } from '../lib/storage';
 import { DEFAULT_DEMO_CONFIG } from '../constants/presets';
+import { useAuth } from '../context/AuthContext';
 import { Navbar } from '../components/common/Navbar';
 import { BasicDetailsTab } from '../components/editor/BasicDetailsTab';
 import { MediaManagerTab } from '../components/editor/MediaManagerTab';
@@ -22,6 +23,7 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 export const EditorPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [config, setConfig] = useState<BirthdayPageConfig>(DEFAULT_DEMO_CONFIG);
   const [activeTab, setActiveTab] = useState<TabKey>('details');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -55,6 +57,7 @@ export const EditorPage: React.FC = () => {
           setConfig(resolved);
         } else if (!initial) {
           const created = createNewBirthdayPage('Best Friend');
+          if (user) created.userId = user.id;
           setConfig(created);
           navigate(`/editor/${created.id}`, { replace: true });
         }
@@ -67,11 +70,14 @@ export const EditorPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [id, navigate]);
+  }, [id, navigate, user]);
 
   // Unified save action with verified feedback
   const handleExplicitSave = useCallback(async (customConfig?: BirthdayPageConfig) => {
     const target = customConfig || config;
+    if (user && !target.userId) {
+      target.userId = user.id;
+    }
     setSaveStatus('saving');
     setSaveMessage(null);
 
@@ -80,14 +86,14 @@ export const EditorPage: React.FC = () => {
       if (res.success) {
         setSaveStatus('saved');
         setHasUnsavedChanges(false);
-        setSaveMessage(res.error ? `Saved locally (${res.error})` : 'All changes saved successfully!');
+        setSaveMessage('All changes saved successfully!');
         setTimeout(() => {
           setSaveStatus('idle');
           setSaveMessage(null);
         }, 3000);
       } else {
         setSaveStatus('error');
-        setSaveMessage(res.error || 'Failed to save changes. Please try again.');
+        setSaveMessage(res.error || 'Failed to save changes to cloud. Please try again.');
       }
     } catch (err: unknown) {
       console.error('Save error:', err);
@@ -95,7 +101,7 @@ export const EditorPage: React.FC = () => {
       const msg = err instanceof Error ? err.message : 'Unknown error during save';
       setSaveMessage(msg);
     }
-  }, [config]);
+  }, [config, user]);
 
   // Handle configuration updates from child components
   const handleUpdateConfig = useCallback((updated: Partial<BirthdayPageConfig>) => {

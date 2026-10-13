@@ -79,6 +79,7 @@ export interface SectionsConfig {
 export interface BirthdayPageConfig {
   id: string;
   slug: string;
+  userId?: string;
   createdAt: string;
   updatedAt: string;
   isPublished: boolean;

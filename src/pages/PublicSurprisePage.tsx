@@ -16,13 +16,15 @@ import { SpecialReasons } from '../components/surprise/SpecialReasons';
 import { ScratchSurprise } from '../components/surprise/ScratchSurprise';
 import { FinalCelebration } from '../components/surprise/FinalCelebration';
 import { ShareModal } from '../components/surprise/ShareModal';
-import { Sparkles, Heart, Gift } from 'lucide-react';
+import { Sparkles, Heart, Gift, Lock, ArrowRight, HelpCircle } from 'lucide-react';
 
 export const PublicSurprisePage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const [config, setConfig] = useState<BirthdayPageConfig | null>(() => {
-    // Instant synchronous bootstrap from hash or local cache
-    const targetSlug = slug || 'sophia-25th';
+    // If on homepage without slug, default to demo
+    if (!slug) return DEFAULT_DEMO_CONFIG;
+
+    // Instant synchronous bootstrap from hash if data is present
     if (typeof window !== 'undefined') {
       if (window.location.hash.startsWith('#data=') || window.location.search.includes('data=')) {
         try {
@@ -41,34 +43,54 @@ export const PublicSurprisePage: React.FC = () => {
         }
       }
     }
-    const local = getPageById(targetSlug);
+    const local = getPageById(slug);
     return local || null;
   });
 
-  const [loading, setLoading] = useState<boolean>(() => config === null);
+  const [loading, setLoading] = useState<boolean>(() => !config);
+  const [notFound, setNotFound] = useState<boolean>(false);
   const [hasOpenedGift, setHasOpenedGift] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [passcodeEntered, setPasscodeEntered] = useState('');
+  const [passcodeError, setPasscodeError] = useState(false);
+  const [isPasscodeUnlocked, setIsPasscodeUnlocked] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadData() {
-      const targetSlug = slug || 'sophia-25th';
-
-      try {
-        const resolved = await resolvePageAsync(targetSlug);
+      // 1. If visiting root landing page (no slug specified), render the default demo
+      if (!slug) {
         if (isMounted) {
-          const finalPage = resolved || config || DEFAULT_DEMO_CONFIG;
-          setConfig(finalPage);
-          document.title = finalPage.pageTitle || `Happy Birthday, ${finalPage.recipientName}! ✨`;
+          setConfig(DEFAULT_DEMO_CONFIG);
+          document.title = DEFAULT_DEMO_CONFIG.pageTitle;
+          setLoading(false);
+          setNotFound(false);
+        }
+        return;
+      }
+
+      // 2. Target slug specified: resolve from Supabase remote database or portable hash
+      try {
+        const resolved = await resolvePageAsync(slug);
+        if (isMounted) {
+          if (resolved) {
+            setConfig(resolved);
+            document.title = resolved.pageTitle || `Happy Birthday, ${resolved.recipientName}! ✨`;
+            setNotFound(false);
+            if (!resolved.passcode) {
+              setIsPasscodeUnlocked(true);
+            }
+          } else {
+            // Not found in Supabase or local cache
+            setNotFound(true);
+          }
           setLoading(false);
         }
       } catch (err) {
-        console.warn('Load data notice:', err);
+        console.warn('Load data error:', err);
         if (isMounted) {
-          if (!config) {
-            setConfig(DEFAULT_DEMO_CONFIG);
-          }
+          setNotFound(true);
           setLoading(false);
         }
       }
@@ -80,6 +102,17 @@ export const PublicSurprisePage: React.FC = () => {
       isMounted = false;
     };
   }, [slug]);
+
+  const handlePasscodeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!config?.passcode) return;
+    if (passcodeEntered.trim() === config.passcode.trim()) {
+      setIsPasscodeUnlocked(true);
+      setPasscodeError(false);
+    } else {
+      setPasscodeError(true);
+    }
+  };
 
   if (loading) {
     return (
@@ -98,7 +131,92 @@ export const PublicSurprisePage: React.FC = () => {
     );
   }
 
-  if (!config) return null;
+  // Unavailable or Not Found Screen
+  if (notFound || !config) {
+    return (
+      <div className="min-h-screen bg-[#160D1F] flex items-center justify-center p-4 text-slate-100 selection:bg-pink-500 selection:text-white">
+        <div className="max-w-md w-full rounded-3xl bg-slate-900/90 border border-white/10 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-pink-500/20 border border-white/15 flex items-center justify-center mx-auto mb-5 text-[#E8C982]">
+            <HelpCircle className="w-8 h-8" />
+          </div>
+
+          <h2 className="text-xl sm:text-2xl font-bold font-elegant text-white mb-2">
+            Birthday Surprise Not Found
+          </h2>
+
+          <p className="text-xs sm:text-sm text-slate-400 mb-6 leading-relaxed">
+            The birthday surprise for <code className="text-[#E8C982] bg-white/5 px-2 py-0.5 rounded font-mono">/b/{slug}</code> could not be found. It may be an unpublished draft or the link may have a typo.
+          </p>
+
+          <div className="space-y-3">
+            <Link
+              to="/editor"
+              className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white font-bold text-xs shadow-lg shadow-pink-500/20 flex items-center justify-center gap-2 transition-all"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Create Your Own Birthday Surprise</span>
+            </Link>
+
+            <Link
+              to="/"
+              className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-white/10 text-slate-300 text-xs font-semibold flex items-center justify-center gap-2 transition-all"
+            >
+              <span>View Sample Surprise</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Passcode Protection Screen
+  if (config.passcode && !isPasscodeUnlocked) {
+    return (
+      <div className="min-h-screen bg-[#160D1F] flex items-center justify-center p-4 text-slate-100">
+        <ThemeBackground theme={config.theme} />
+        <div className="relative z-10 max-w-sm w-full rounded-3xl bg-slate-900/90 border border-white/15 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#C72C55] to-[#E8C982] flex items-center justify-center mx-auto mb-4 text-[#160D1F] shadow-lg">
+            <Lock className="w-6 h-6" />
+          </div>
+
+          <h2 className="text-xl font-bold font-elegant text-white mb-1">
+            Secret Birthday Surprise
+          </h2>
+          <p className="text-xs text-slate-400 mb-5">
+            This celebration for <span className="text-[#E8C982] font-semibold">{config.recipientName}</span> is protected with a secret passcode.
+          </p>
+
+          <form onSubmit={handlePasscodeSubmit} className="space-y-3">
+            <input
+              type="password"
+              value={passcodeEntered}
+              onChange={(e) => {
+                setPasscodeEntered(e.target.value);
+                setPasscodeError(false);
+              }}
+              placeholder="Enter secret passcode"
+              className="w-full bg-slate-800 border border-white/15 focus:border-pink-500 rounded-xl px-4 py-2.5 text-center text-sm text-white placeholder-slate-500 outline-none"
+              autoFocus
+            />
+
+            {passcodeError && (
+              <p className="text-xs text-rose-400 font-semibold animate-shake">
+                Incorrect passcode. Please try again!
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-bold text-xs shadow-lg shadow-pink-500/20 active:scale-95 transition-all cursor-pointer"
+            >
+              Unlock Surprise ✨
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   const sections = config.sections;
   const publicUrl = window.location.href.split('#')[0];

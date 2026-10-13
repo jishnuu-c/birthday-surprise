@@ -1,7 +1,8 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Sparkles, Edit3, Share2, Eye, LayoutGrid } from 'lucide-react';
+import { Sparkles, Edit3, Share2, Eye, LayoutGrid, LogIn, LogOut, User as UserIcon } from 'lucide-react';
 import { BirthdayPageConfig } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 
 interface NavbarProps {
   config: BirthdayPageConfig;
@@ -15,6 +16,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   isEditor = false
 }) => {
   const location = useLocation();
+  const { user, openAuthModal, signOut, isConfigured } = useAuth();
   const currentSlug = config.slug || config.id;
 
   return (
@@ -47,7 +49,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             title="All Birthdays Dashboard"
           >
             <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline">All Pages</span>
+            <span className="hidden sm:inline">Dashboard</span>
           </Link>
 
           {/* Recipient View vs Editor Studio Toggle */}
@@ -79,6 +81,35 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Share2 className="w-3.5 h-3.5 shrink-0" />
               <span>Share</span>
+            </button>
+          )}
+
+          {/* User Auth Action Button */}
+          {user ? (
+            <div className="flex items-center gap-1 sm:gap-2 pl-1 border-l border-white/10">
+              <span 
+                className="text-[11px] text-slate-300 font-medium hidden md:inline max-w-[120px] truncate"
+                title={user.email || 'Guest User'}
+              >
+                {user.email ? user.email.split('@')[0] : 'Guest'}
+              </span>
+              <button
+                onClick={() => signOut()}
+                className="p-1.5 rounded-full text-slate-400 hover:text-rose-400 hover:bg-white/10 transition-colors cursor-pointer"
+                title="Sign Out"
+                aria-label="Sign Out"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={openAuthModal}
+              className="px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold bg-white/10 hover:bg-white/15 text-slate-200 hover:text-white border border-white/15 flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Sign In or Create Account"
+            >
+              <LogIn className="w-3.5 h-3.5 text-[#E8C982]" />
+              <span className="hidden xs:inline">Sign In</span>
             </button>
           )}
         </div>

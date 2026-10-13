@@ -6,9 +6,18 @@ import { isSupabaseConfigured, uploadRemoteMedia } from '../../lib/supabase';
 import { saveMediaBlob, getMediaRecord, deleteMediaBlob, getMediaBlobUrl } from '../../lib/mediaDb';
 import { 
   Upload, Trash2, ArrowUp, ArrowDown, Image as ImageIcon, Video, Music, 
-  Sparkles, Mic, Plus, Play, Pause, Volume2, VolumeX, RotateCcw, 
-  Check, AlertCircle, FileAudio, FileVideo, Radio, RefreshCw, Eye, Film, Save, CheckCircle2
+  Sparkles, Mic, Plus, Play, Pause, 
+  Check, AlertCircle, FileAudio, FileVideo, RefreshCw, Film, Save, CheckCircle2
 } from 'lucide-react';
+
+// Format file size helper
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
 interface MediaManagerTabProps {
   config: BirthdayPageConfig;
@@ -209,14 +218,7 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Format file size helper
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+
 
   // Profile photo upload
   const handleProfilePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -229,6 +231,9 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
         const uploadRes = await uploadRemoteMedia(file, 'images', `profile-${file.name}`);
         if (uploadRes.url) {
           onChange({ profilePhotoUrl: uploadRes.url });
+          return;
+        } else if (uploadRes.error) {
+          alert(`Cloud upload failed: ${uploadRes.error}`);
           return;
         }
       }
@@ -338,7 +343,10 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
           setIsAudioUploading(false);
           return;
         } else if (res.error) {
-          console.warn('Supabase audio upload note:', res.error);
+          setAudioError(`Cloud upload failed: ${res.error}`);
+          setIsAudioUploading(false);
+          setAudioUploadProgress(null);
+          return;
         }
       }
 
@@ -405,7 +413,10 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
           setIsVideoUploading(false);
           return;
         } else if (res.error) {
-          console.warn('Supabase video upload note:', res.error);
+          setVideoError(`Cloud upload failed: ${res.error}`);
+          setIsVideoUploading(false);
+          setVideoUploadProgress(null);
+          return;
         }
       }
 
@@ -447,6 +458,9 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
         if (res.url) {
           onChange({ videoThumbnailUrl: res.url });
           return;
+        } else if (res.error) {
+          alert(`Thumbnail upload failed: ${res.error}`);
+          return;
         }
       }
       const compressed = await compressImageFile(file, 1000, 0.85);
@@ -467,6 +481,9 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
         const res = await uploadRemoteMedia(file, 'audios', `voice-${file.name}`);
         if (res.url) {
           onChange({ voiceMessageUrl: res.url });
+          return;
+        } else if (res.error) {
+          alert(`Voice note upload failed: ${res.error}`);
           return;
         }
       }

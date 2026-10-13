@@ -35,17 +35,17 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
 
     try {
       const result = await saveAndPublishPage(config);
+      if (!result.success) {
+        setStatusMessage(`❌ Error publishing page: ${result.error || 'Failed to save to cloud'}`);
+        return;
+      }
       onUpdateConfig({ isPublished: true });
       setPublishedUrl(result.url);
-      if (result.error) {
-        setStatusMessage(`⚠️ Saved locally: ${result.error}. Your portable link is ready to share!`);
-      } else {
-        setStatusMessage('🎉 Surprise Page published successfully! Ready to share across all devices.');
-      }
+      setStatusMessage('🎉 Surprise Page published successfully to cloud! Permanent link ready to share across all devices.');
     } catch (err: unknown) {
       console.error('Publish error:', err);
       const msg = err instanceof Error ? err.message : 'Error publishing page. Please try again.';
-      setStatusMessage(`Error publishing page: ${msg}`);
+      setStatusMessage(`❌ Error publishing page: ${msg}`);
     } finally {
       setIsPublishing(false);
     }
@@ -128,7 +128,11 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
         </div>
 
         {statusMessage && (
-          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
+          <div className={`p-3 rounded-xl border text-xs font-semibold ${
+            statusMessage.startsWith('❌')
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+          }`}>
             {statusMessage}
           </div>
         )}
