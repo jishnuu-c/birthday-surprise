@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { BirthdayPageConfig, SectionsConfig, SpecialReason, TimelineMemory } from '../../types';
-import { CheckSquare, Square, Layers, Plus, Trash2, Cake, Ticket, Heart, Clock, Save, RefreshCw, CheckCircle2, Sparkles } from 'lucide-react';
+import { BirthdayPageConfig, SectionsConfig, SpecialReason } from '../../types';
+import { CheckSquare, Square, Layers, Plus, Trash2, Cake, Ticket, Heart, Clock, Save, RefreshCw, CheckCircle2, Sparkles, Edit3 } from 'lucide-react';
+import { JourneyTimelineTab } from './JourneyTimelineTab';
 
 interface SectionManagerTabProps {
   config: BirthdayPageConfig;
@@ -40,29 +41,6 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({
     { key: 'scratchSurprise', name: 'Secret Scratch Mystery Card', icon: '🎟️', desc: 'Scratch-to-reveal golden ticket with voucher / gift code' },
     { key: 'finalCelebration', name: 'Final Grand Fireworks Finale', icon: '🎆', desc: 'Celebratory message, grand confetti & social share buttons' }
   ];
-
-  // Timeline handlers
-  const addTimelineItem = () => {
-    const newMem: TimelineMemory = {
-      id: `mem-${Date.now()}`,
-      yearOrDate: 'Special Date',
-      title: 'A Beautiful Memory',
-      description: 'Describe this memorable moment...',
-      tag: 'Cherished'
-    };
-    onChange({ timelineMemories: [...(config.timelineMemories || []), newMem] });
-  };
-
-  const updateTimelineItem = (index: number, fields: Partial<TimelineMemory>) => {
-    const list = [...(config.timelineMemories || [])];
-    list[index] = { ...list[index], ...fields };
-    onChange({ timelineMemories: list });
-  };
-
-  const deleteTimelineItem = (index: number) => {
-    const list = (config.timelineMemories || []).filter((_, i) => i !== index);
-    onChange({ timelineMemories: list });
-  };
 
   // Reasons handlers
   const addReasonItem = () => {
@@ -184,8 +162,24 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({
                     </div>
                   </div>
 
-                  <div className="text-pink-400">
-                    {isEnabled ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5 text-slate-500" />}
+                  <div className="flex items-center gap-2">
+                    {key === 'memoryTimeline' && isEnabled && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveSubTab('timeline');
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Edit milestones for this section"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>Edit Journey</span>
+                      </button>
+                    )}
+                    <div className="text-pink-400">
+                      {isEnabled ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5 text-slate-500" />}
+                    </div>
                   </div>
                 </div>
               );
@@ -194,100 +188,14 @@ export const SectionManagerTab: React.FC<SectionManagerTabProps> = ({
         </div>
       )}
 
-      {/* 2. Timeline Editor */}
+      {/* 2. Chapters of Our Journey Editor */}
       {activeSubTab === 'timeline' && (
-        <div className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-pink-300 uppercase tracking-wider">
-              Memory Timeline Milestones
-            </span>
-            <button
-              type="button"
-              onClick={addTimelineItem}
-              className="px-3 py-1.5 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Memory</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Timeline Section Title
-              </label>
-              <input
-                type="text"
-                value={config.timelineHeading || ''}
-                onChange={(e) => onChange({ timelineHeading: e.target.value })}
-                placeholder="e.g. Chapters of Our Journey"
-                className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-100 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Timeline Subtitle
-              </label>
-              <input
-                type="text"
-                value={config.timelineSubtitle || ''}
-                onChange={(e) => onChange({ timelineSubtitle: e.target.value })}
-                placeholder="e.g. Looking back at the milestones..."
-                className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-slate-100 outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-4 pt-2">
-            {config.timelineMemories?.map((mem, index) => (
-              <div key={mem.id || index} className="p-4 rounded-xl bg-slate-900/90 border border-white/10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-300">Milestone #{index + 1}</span>
-                  <button
-                    type="button"
-                    onClick={() => deleteTimelineItem(index)}
-                    className="text-red-400 hover:text-red-300 text-xs p-1 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    value={mem.yearOrDate}
-                    onChange={(e) => updateTimelineItem(index, { yearOrDate: e.target.value })}
-                    placeholder="Date or Year (e.g. 2022 - Summer)"
-                    className="bg-slate-950 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-100 outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={mem.title}
-                    onChange={(e) => updateTimelineItem(index, { title: e.target.value })}
-                    placeholder="Milestone Title (e.g. The Road Trip)"
-                    className="bg-slate-950 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-100 outline-none"
-                  />
-                </div>
-
-                <textarea
-                  rows={2}
-                  value={mem.description}
-                  onChange={(e) => updateTimelineItem(index, { description: e.target.value })}
-                  placeholder="Describe what made this day so special..."
-                  className="w-full bg-slate-950 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-100 outline-none resize-none"
-                />
-
-                <input
-                  type="text"
-                  value={mem.imageUrl || ''}
-                  onChange={(e) => updateTimelineItem(index, { imageUrl: e.target.value })}
-                  placeholder="Optional Photo Image URL"
-                  className="w-full bg-slate-950 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-300 outline-none"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
+        <JourneyTimelineTab
+          config={config}
+          onChange={onChange}
+          onSave={onSave}
+          saveStatus={saveStatus}
+        />
       )}
 
       {/* 3. Reasons Editor */}

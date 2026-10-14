@@ -7,6 +7,7 @@ import { DEFAULT_DEMO_CONFIG } from '../constants/presets';
 import { useAuth } from '../context/AuthContext';
 import { Navbar } from '../components/common/Navbar';
 import { BasicDetailsTab } from '../components/editor/BasicDetailsTab';
+import { JourneyTimelineTab } from '../components/editor/JourneyTimelineTab';
 import { MediaManagerTab } from '../components/editor/MediaManagerTab';
 import { ThemeCustomizerTab } from '../components/editor/ThemeCustomizerTab';
 import { SectionManagerTab } from '../components/editor/SectionManagerTab';
@@ -18,10 +19,10 @@ import { getStoredEditToken, storeEditToken, verifyTokenWithServer } from '../li
 import { 
   User, Image, Palette, Layers, Globe, Eye, Edit3, Save, 
   Sparkles, Check, ExternalLink, AlertCircle, RefreshCw, CheckCircle2,
-  Lock, Copy, KeyRound, PlusCircle, ArrowLeft, ShieldCheck
+  Lock, Copy, KeyRound, PlusCircle, ArrowLeft, ShieldCheck, Clock
 } from 'lucide-react';
 
-type TabKey = 'details' | 'media' | 'theme' | 'sections' | 'publish';
+type TabKey = 'details' | 'journey' | 'media' | 'theme' | 'sections' | 'publish';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 export const EditorPage: React.FC = () => {
@@ -374,6 +375,7 @@ export const EditorPage: React.FC = () => {
 
   const tabs: { key: TabKey; label: string; shortLabel: string; icon: React.ReactNode }[] = [
     { key: 'details', label: 'Basic Details', shortLabel: 'Details', icon: <User className="w-4 h-4 shrink-0" /> },
+    { key: 'journey', label: 'Chapters of Our Journey', shortLabel: 'Journey', icon: <Clock className="w-4 h-4 shrink-0 text-[#E8C982]" /> },
     { key: 'media', label: 'Media & Audio', shortLabel: 'Media', icon: <Image className="w-4 h-4 shrink-0" /> },
     { key: 'theme', label: 'Themes & Styles', shortLabel: 'Themes', icon: <Palette className="w-4 h-4 shrink-0" /> },
     { key: 'sections', label: 'Section Manager', shortLabel: 'Sections', icon: <Layers className="w-4 h-4 shrink-0" /> },
@@ -811,6 +813,9 @@ export const EditorPage: React.FC = () => {
               <div className="animate-in fade-in duration-200">
                 {activeTab === 'details' && (
                   <BasicDetailsTab config={config} onChange={handleUpdateConfig} onSave={() => handleExplicitSave()} saveStatus={saveStatus} />
+                )}
+                {activeTab === 'journey' && (
+                  <JourneyTimelineTab config={config} onChange={handleUpdateConfig} onSave={() => handleExplicitSave()} saveStatus={saveStatus} />
                 )}
                 {activeTab === 'media' && (
                   <MediaManagerTab config={config} onChange={handleUpdateConfig} onSave={() => handleExplicitSave()} saveStatus={saveStatus} />
