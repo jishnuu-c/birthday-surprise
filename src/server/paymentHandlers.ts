@@ -28,7 +28,7 @@ export function getAdminEmails(): string[] {
   if (parsed.length > 0) {
     return Array.from(new Set(parsed));
   }
-  return ['admin@gmail.com'];
+  return ['admin@gmail.com', 'jishnuachu951@gmail.com'];
 }
 
 export function getAdminEmail(): string {
@@ -38,13 +38,34 @@ export function getAdminEmail(): string {
 
 let cachedServerSupabase: any = null;
 export function getServerSupabase(authHeader?: string | null) {
-  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = (
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    'https://mplgvxraslaqtgjntzpa.supabase.co'
+  ).trim();
+
+  const serviceKey = (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    ''
+  ).trim();
+
   if (serviceKey && url) {
-    return createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    return createClient(url, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
   }
 
-  const anonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+  const anonKey = (
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.SUPABASE_PUBLIC_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    'sb_publishable_N-D4agXYIn98PMG9w5Ljgg_kam3ly23'
+  ).trim();
+
   if (url && anonKey) {
     if (authHeader && authHeader.trim().startsWith('Bearer eyJ')) {
       return createClient(url, anonKey, {
@@ -53,7 +74,9 @@ export function getServerSupabase(authHeader?: string | null) {
       });
     }
     if (!cachedServerSupabase) {
-      cachedServerSupabase = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
+      cachedServerSupabase = createClient(url, anonKey, {
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
     }
     return cachedServerSupabase;
   }
@@ -426,6 +449,7 @@ export async function verifyAdminSession(authHeader?: string | null): Promise<{
     try {
       const { data: { user }, error } = await supabaseClient.auth.getUser(token);
       if (error || !user || !user.email) {
+        console.warn('[Admin Auth] Session token rejected by Supabase auth:', error?.message || 'No user associated with token');
         return { authorized: false, error: error?.message || 'Invalid user session token' };
       }
 
@@ -465,14 +489,16 @@ export async function verifyAdminSession(authHeader?: string | null): Promise<{
         return { authorized: true, userEmail, userId: user.id };
       }
 
+      console.warn(`[Admin Auth] User authenticated but not in admin allowlist/table: ${userEmail}`);
       return {
         authorized: false,
         userEmail,
         userId: user.id,
-        error: `User "${user.email}" authenticated successfully, but this account is not authorized as an administrator. To authorize this account, add "${user.email}" to ADMIN_EMAIL in .env or add it to the admin_users table in Supabase.`
+        error: `User "${user.email}" authenticated successfully, but this account is not authorized as an administrator.`
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Database error verifying admin session';
+      console.error('[Admin Auth] Verification exception:', msg);
       return { authorized: false, error: msg };
     }
   }
@@ -500,9 +526,12 @@ export async function getAdminDashboardData(authHeader?: string | null): Promise
   };
   error?: string;
 }> {
-  const isAdmin = await verifyAdminAuth(authHeader);
-  if (!isAdmin) {
-    return { authorized: false, error: 'Unauthorized: Admin authentication required.' };
+  const adminCheck = await verifyAdminSession(authHeader);
+  if (!adminCheck.authorized) {
+    return { 
+      authorized: false, 
+      error: `Unauthorized: Admin authentication required. ${adminCheck.error || ''}`.trim() 
+    };
   }
 
   if (!serverSupabase) {
@@ -579,9 +608,12 @@ export async function createAdminFreeSurprise(
   authHeader: string | null,
   params: { recipientName: string; config: unknown }
 ): Promise<{ success: boolean; surpriseId?: string; editUrl?: string; error?: string }> {
-  const isAdmin = await verifyAdminAuth(authHeader);
-  if (!isAdmin) {
-    return { success: false, error: 'Unauthorized: Admin authentication required.' };
+  const adminCheck = await verifyAdminSession(authHeader);
+  if (!adminCheck.authorized) {
+    return { 
+      success: false, 
+      error: `Unauthorized: Admin authentication required. ${adminCheck.error || ''}`.trim() 
+    };
   }
 
   const supabaseClient = getServerSupabase(authHeader) || serverSupabase;
@@ -600,6 +632,9 @@ export async function createAdminFreeSurprise(
   cfg.isPaid = true;
   cfg.isAdminCreated = true;
   cfg.paymentId = 'admin_complimentary';
+  if (adminCheck.userId) {
+    cfg.userId = adminCheck.userId;
+  }
 
   try {
     const rowPayload: Record<string, unknown> = {
@@ -610,6 +645,7 @@ export async function createAdminFreeSurprise(
       is_paid: true,
       payment_id: 'admin_complimentary',
       is_admin_created: true,
+      user_id: adminCheck.userId || null,
       config: cfg,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()

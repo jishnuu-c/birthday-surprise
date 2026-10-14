@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BirthdayPageConfig, PaymentRecord } from '../types';
 import { deletePage, createNewBirthdayPage } from '../lib/storage';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { 
   Plus, Edit3, Eye, Copy, Trash2, Gift, Calendar, 
@@ -41,13 +42,30 @@ export const DashboardPage: React.FC = () => {
 
   // Fetch admin dashboard data from server API
   const fetchDashboardData = async () => {
-    if (!isAdmin || !authToken) return;
+    if (!isAdmin) return;
 
     setIsLoadingData(true);
     try {
+      let token = authToken;
+      if (supabase) {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData.session?.access_token) {
+            token = sessionData.session.access_token;
+          }
+        } catch {
+          // fallback to authToken
+        }
+      }
+
+      if (!token) {
+        setIsLoadingData(false);
+        return;
+      }
+
       const res = await fetch('/api/admin', {
         headers: {
-          Authorization: `Bearer ${authToken}`
+          Authorization: `Bearer ${token}`
         }
       });
 
@@ -103,6 +121,24 @@ export const DashboardPage: React.FC = () => {
     setIsCreatingFree(true);
 
     try {
+      let token = authToken;
+      if (supabase) {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData.session?.access_token) {
+            token = sessionData.session.access_token;
+          }
+        } catch {
+          // fallback to authToken
+        }
+      }
+
+      if (!token) {
+        alert('Your administrator session has expired or is missing. Please sign in again.');
+        setIsCreatingFree(false);
+        return;
+      }
+
       const draft = createNewBirthdayPage(name);
       draft.isPaid = true;
 
@@ -110,7 +146,7 @@ export const DashboardPage: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
           action: 'create_free',

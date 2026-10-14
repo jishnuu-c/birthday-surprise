@@ -26,7 +26,7 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
 
   if (req.method === 'GET') {
     const data = await getAdminDashboardData(authHeader);
-    res.statusCode = data.authorized ? 200 : 401;
+    res.statusCode = data.authorized ? 200 : (data.error?.includes('not authorized') ? 403 : 401);
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(data));
     return;
@@ -54,7 +54,7 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
 
       if (action === 'verify') {
         const verifyResult = await verifyAdminSession(authHeader);
-        res.statusCode = verifyResult.authorized ? 200 : 401;
+        res.statusCode = verifyResult.authorized ? 200 : (verifyResult.error?.includes('not authorized') ? 403 : 401);
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify(verifyResult));
         return;
@@ -65,7 +65,15 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
           recipientName: recipientName || 'Guest of Honor',
           config: config || {}
         });
-        res.statusCode = result.success ? 200 : 401;
+        if (result.success) {
+          res.statusCode = 200;
+        } else if (result.error?.includes('not authorized') || result.error?.includes('Access denied')) {
+          res.statusCode = 403;
+        } else if (result.error?.includes('Missing') || result.error?.includes('token') || result.error?.includes('Unauthorized') || result.error?.includes('JWT')) {
+          res.statusCode = 401;
+        } else {
+          res.statusCode = 500;
+        }
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify(result));
         return;
@@ -73,7 +81,7 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
 
       if (action === 'get_dashboard_data') {
         const data = await getAdminDashboardData(authHeader);
-        res.statusCode = data.authorized ? 200 : 401;
+        res.statusCode = data.authorized ? 200 : (data.error?.includes('not authorized') ? 403 : 401);
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify(data));
         return;
