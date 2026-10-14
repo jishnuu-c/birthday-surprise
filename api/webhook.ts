@@ -1,0 +1,41 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { handleRazorpayWebhook } from '../src/server/paymentHandlers';
+
+interface ExtendedRequest extends IncomingMessage {
+  body?: any;
+  method?: string;
+}
+
+interface ExtendedResponse extends ServerResponse {
+  status: (code: number) => ExtendedResponse;
+  json: (data: unknown) => void;
+}
+
+export default async function handler(req: ExtendedRequest, res: ExtendedResponse) {
+  if (req.method !== 'POST') {
+    res.statusCode = 405;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+    return;
+  }
+
+  try {
+    const buffers = [];
+    for await (const chunk of req) {
+      buffers.push(chunk);
+    }
+    const rawBody = Buffer.concat(buffers).toString('utf8');
+    const signature = req.headers['x-razorpay-signature'] as string | undefined;
+
+    const result = await handleRazorpayWebhook(rawBody, signature);
+
+    res.statusCode = result.success ? 200 : 400;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(result));
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Internal Server Error';
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ success: false, error: msg }));
+  }
+}

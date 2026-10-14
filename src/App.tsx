@@ -6,7 +6,6 @@ import { PublicSurprisePage } from './pages/PublicSurprisePage';
 const EditorPage = lazy(() => import('./pages/EditorPage').then(m => ({ default: m.EditorPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
-const AuthModal = lazy(() => import('./components/auth/AuthModal').then(m => ({ default: m.AuthModal })));
 
 const RouteLoadingFallback: React.FC = () => (
   <div className="min-h-screen bg-[#160D1F] flex items-center justify-center text-[#E8C982]">
@@ -31,13 +30,13 @@ export const App: React.FC = () => {
             <Route path="/editor" element={<EditorPage />} />
             <Route path="/editor/:id" element={<EditorPage />} />
 
-            {/* Multi-project dashboard */}
+            {/* Multi-project / Admin dashboard */}
+            <Route path="/admin" element={<DashboardPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
 
             {/* 404 Fallback */}
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
-          <AuthModal />
         </Suspense>
       </BrowserRouter>
     </AuthProvider>

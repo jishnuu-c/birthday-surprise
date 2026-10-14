@@ -3,7 +3,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { BirthdayPageConfig } from '../../types';
 import { saveAndPublishPage, generateShareableDataUrl } from '../../lib/storage';
 import { isSupabaseConfigured } from '../../lib/supabase';
-import { Globe, Share2, Copy, Check, QrCode, MessageCircle, CloudCheck, HardDrive, FileDown, FileUp, Sparkles, ExternalLink } from 'lucide-react';
+import { Globe, Share2, Copy, Check, QrCode, MessageCircle, CloudCheck, HardDrive, FileDown, FileUp, Sparkles, ExternalLink, Lock, AlertTriangle } from 'lucide-react';
+import { getStoredEditToken } from '../../lib/paymentService';
 
 interface PublishShareTabProps {
   config: BirthdayPageConfig;
@@ -13,6 +14,7 @@ interface PublishShareTabProps {
 
 export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpdateConfig, onPublishSuccess }) => {
   const [isPublishing, setIsPublishing] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState(() => {
     return isSupabaseConfigured
       ? `${window.location.origin}/b/${config.slug || config.id}`
@@ -30,12 +32,14 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
     }
   }, [config]);
 
+  const getEffectiveToken = () => config.editToken || getStoredEditToken(config.id);
+
   const handlePublish = async () => {
     setIsPublishing(true);
     setStatusMessage(null);
 
     try {
-      const result = await saveAndPublishPage(config);
+      const result = await saveAndPublishPage(config, getEffectiveToken());
       if (!result.success) {
         setStatusMessage(`❌ Error publishing page: ${result.error || 'Failed to save to cloud'}`);
         return;
@@ -65,7 +69,7 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
       setIsPublishing(true);
       setStatusMessage(null);
       try {
-        const result = await saveAndPublishPage(config);
+        const result = await saveAndPublishPage(config, getEffectiveToken());
         if (!result.success) {
           setStatusMessage(`❌ Error publishing page before copying: ${result.error || 'Failed to save to cloud'}`);
           setIsPublishing(false);
@@ -107,7 +111,7 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
       setIsPublishing(true);
       setStatusMessage(null);
       try {
-        const result = await saveAndPublishPage(config);
+        const result = await saveAndPublishPage(config, getEffectiveToken());
         if (!result.success) {
           setStatusMessage(`❌ Error publishing page before sharing: ${result.error || 'Failed to save to cloud'}`);
           setIsPublishing(false);
@@ -279,6 +283,10 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
                 <span>{copiedHash ? 'Copied Portable URL!' : 'Copy Serverless Portable Link'}</span>
               </button>
             </div>
+
+            <p className="text-[11px] text-slate-400 mt-2">
+              ✨ <strong>Public View Guarantee:</strong> This link is view-only for the birthday person and guests. It requires no login or payment and never reveals your secret editing credentials.
+            </p>
           </>
         ) : (
           /* When NOT published: show clear draft warning and publish action */
@@ -322,6 +330,64 @@ export const PublishShareTab: React.FC<PublishShareTabProps> = ({ config, onUpda
           </div>
         </div>
       )}
+
+      {/* Secret Creator Edit Access Link Card (Requirement 3: recovery & retention) */}
+      {(() => {
+        const token = config.editToken || getStoredEditToken(config.id);
+        const secretEditUrl = token
+          ? `${window.location.origin}/editor/${config.id}?token=${token}`
+          : `${window.location.origin}/editor/${config.id}`;
+
+        const handleCopySecret = () => {
+          navigator.clipboard.writeText(secretEditUrl);
+          setCopiedToken(true);
+          setTimeout(() => setCopiedToken(false), 2500);
+        };
+
+        return (
+          <div className="glass-panel p-6 rounded-2xl border border-amber-500/30 space-y-4 bg-gradient-to-br from-amber-500/5 via-transparent to-pink-500/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-bold text-amber-300 uppercase tracking-wider">
+                <Lock className="w-4 h-4 text-[#E8C982]" />
+                <span>Secret Creator Edit Link (Keep Private)</span>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                Creator Only
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              This secret link contains your unique editing access token. Save or bookmark it so you can return and make changes to this surprise in the future without paying again!
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-slate-950 p-2 rounded-xl border border-amber-500/30">
+              <input
+                type="text"
+                readOnly
+                value={secretEditUrl}
+                className="flex-1 bg-transparent px-2 text-xs text-amber-200 outline-none select-all truncate font-mono py-1 sm:py-0"
+              />
+              <button
+                onClick={handleCopySecret}
+                className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+              >
+                {copiedToken ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedToken ? 'Copied Secret Link!' : 'Copy Secret Link'}</span>
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-2.5 text-xs text-amber-200">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold">Important Security Warning:</p>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  Do NOT share this secret edit link with the birthday recipient or on social media. If you lose this link and clear your browser cache, you may lose editing access to this surprise.
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Cloud & Backup Settings */}
       <div className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4">

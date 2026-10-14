@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { BirthdayPageConfig } from '../types';
 import { getPageById, resolvePageAsync, savePage, savePageLocally, createNewBirthdayPage, areConfigsEqual } from '../lib/storage';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -13,9 +13,12 @@ import { SectionManagerTab } from '../components/editor/SectionManagerTab';
 import { PublishShareTab } from '../components/editor/PublishShareTab';
 import { LivePreviewFrame } from '../components/editor/LivePreviewFrame';
 import { ShareModal } from '../components/surprise/ShareModal';
+import { PaymentUnlockModal } from '../components/editor/PaymentUnlockModal';
+import { getStoredEditToken, storeEditToken, verifyTokenWithServer } from '../lib/paymentService';
 import { 
   User, Image, Palette, Layers, Globe, Eye, Edit3, Save, 
-  Sparkles, Check, ExternalLink, AlertCircle, RefreshCw, CheckCircle2 
+  Sparkles, Check, ExternalLink, AlertCircle, RefreshCw, CheckCircle2,
+  Lock, Copy, KeyRound, PlusCircle, ArrowLeft, ShieldCheck
 } from 'lucide-react';
 
 type TabKey = 'details' | 'media' | 'theme' | 'sections' | 'publish';
@@ -23,8 +26,9 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 export const EditorPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAdmin, authToken } = useAuth();
   const [config, setConfig] = useState<BirthdayPageConfig>(DEFAULT_DEMO_CONFIG);
   const [activeTab, setActiveTab] = useState<TabKey>('details');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -32,6 +36,15 @@ export const EditorPage: React.FC = () => {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Access Control & Payment States
+  const [isAccessGranted, setIsAccessGranted] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [tokenVerificationStatus, setTokenVerificationStatus] = useState<'checking' | 'valid' | 'invalid' | 'none'>('checking');
+  const [inputToken, setInputToken] = useState('');
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [copiedSecretLink, setCopiedSecretLink] = useState(false);
+  const [dismissSecretBanner, setDismissSecretBanner] = useState(false);
   
   // View mode state: on mobile default to 'editor-only', desktop default to 'split'
   const [viewMode, setViewMode] = useState<'split' | 'editor-only' | 'preview-only'>('split');
@@ -42,7 +55,11 @@ export const EditorPage: React.FC = () => {
   const userRef = useRef(user);
   userRef.current = user;
 
-  // Load configuration by ID with full async media resolution
+  // URL token or local stored token
+  const urlToken = searchParams.get('token');
+  const currentToken = urlToken || (id ? getStoredEditToken(id) : null);
+
+  // Load configuration by ID with payment & edit token authorization
   useEffect(() => {
     let isMounted = true;
 
@@ -50,6 +67,7 @@ export const EditorPage: React.FC = () => {
       // 1. If visiting /editor with no ID, immediately initialize a new unique birthday page
       if (!id) {
         const created = createNewBirthdayPage('Best Friend');
+        created.isPaid = false;
         if (userRef.current) created.userId = userRef.current.id;
         if (isMounted) {
           isCloudPersistedRef.current = false;
@@ -62,13 +80,14 @@ export const EditorPage: React.FC = () => {
         return;
       }
 
-      // 2. If visiting /editor with the default demo ID, fork it into a unique page so the demo is never overwritten
+      // 2. If visiting /editor with the default demo ID, fork it into a unique page so demo is never overwritten
       if (id === DEFAULT_DEMO_CONFIG.id) {
         const forked: BirthdayPageConfig = {
           ...DEFAULT_DEMO_CONFIG,
           id: `bday-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
           slug: `celebration-${Math.floor(1000 + Math.random() * 9000)}`,
           isPublished: false,
+          isPaid: false,
           userId: userRef.current?.id,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -95,24 +114,70 @@ export const EditorPage: React.FC = () => {
         latestConfigRef.current = initial;
       }
 
-      // Full async resolution (creator studio allows local fallback for editing drafts)
+      // Full async resolution
       const resolved = await resolvePageAsync(id, { allowLocalFallback: true });
-      if (isMounted) {
-        if (resolved) {
-          isCloudPersistedRef.current = isSupabaseConfigured && Boolean(resolved.id);
-          setConfig(resolved);
-          lastSavedConfigRef.current = resolved;
-          latestConfigRef.current = resolved;
-        } else if (!initial) {
-          const created = createNewBirthdayPage('Best Friend');
-          if (userRef.current) created.userId = userRef.current.id;
-          savePageLocally(created);
-          isCloudPersistedRef.current = false;
-          setConfig(created);
-          lastSavedConfigRef.current = created;
-          latestConfigRef.current = created;
-          navigate(`/editor/${created.id}`, { replace: true });
+      let currentLoaded = resolved || initial;
+
+      if (!currentLoaded && isMounted) {
+        const created = createNewBirthdayPage('Best Friend');
+        created.isPaid = false;
+        if (userRef.current) created.userId = userRef.current.id;
+        savePageLocally(created);
+        currentLoaded = created;
+      }
+
+      if (isMounted && currentLoaded) {
+        isCloudPersistedRef.current = isSupabaseConfigured && Boolean(currentLoaded.id);
+        setConfig(currentLoaded);
+        lastSavedConfigRef.current = currentLoaded;
+        latestConfigRef.current = currentLoaded;
+
+        // =========================================================================
+        // AUTHORIZATION & PAYMENT CHECK
+        // =========================================================================
+        // Administrator always gets free, instant access
+        if (isAdmin) {
+          setIsAccessGranted(true);
+          setShowPaymentModal(false);
+          setTokenVerificationStatus('valid');
+          setIsLoading(false);
+          return;
         }
+
+        const effectiveToken = urlToken || getStoredEditToken(currentLoaded.id) || currentLoaded.editToken;
+
+        // If page is marked paid in database/local:
+        if (currentLoaded.isPaid) {
+          if (effectiveToken) {
+            setTokenVerificationStatus('checking');
+            const check = await verifyTokenWithServer(currentLoaded.id, effectiveToken, authToken);
+            if (check.valid || check.isAdmin) {
+              setIsAccessGranted(true);
+              setShowPaymentModal(false);
+              setTokenVerificationStatus('valid');
+              storeEditToken(currentLoaded.id, effectiveToken);
+              // Ensure token is synced into current config
+              currentLoaded.editToken = effectiveToken;
+              if (!urlToken) {
+                setSearchParams({ token: effectiveToken }, { replace: true });
+              }
+            } else {
+              setIsAccessGranted(false);
+              setShowPaymentModal(false);
+              setTokenVerificationStatus('invalid');
+            }
+          } else {
+            setIsAccessGranted(false);
+            setShowPaymentModal(false);
+            setTokenVerificationStatus('none');
+          }
+        } else {
+          // Unpaid page -> must pay ₹40 before editing
+          setIsAccessGranted(false);
+          setShowPaymentModal(true);
+          setTokenVerificationStatus('none');
+        }
+
         setIsLoading(false);
       }
     }
@@ -122,24 +187,100 @@ export const EditorPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [id, navigate]);
+  }, [id, navigate, isAdmin, authToken, urlToken, setSearchParams]);
+
+  // Handle successful ₹40 payment verification
+  const handlePaymentSuccess = (result: { surpriseId: string; editToken: string; editUrl: string }) => {
+    storeEditToken(result.surpriseId, result.editToken);
+    setSearchParams({ token: result.editToken }, { replace: true });
+
+    const updatedConfig: BirthdayPageConfig = {
+      ...config,
+      id: result.surpriseId,
+      isPaid: true,
+      editToken: result.editToken
+    };
+
+    setConfig(updatedConfig);
+    latestConfigRef.current = updatedConfig;
+    lastSavedConfigRef.current = updatedConfig;
+    savePageLocally(updatedConfig);
+
+    setShowPaymentModal(false);
+    setIsAccessGranted(true);
+    setTokenVerificationStatus('valid');
+
+    // Trigger initial save to cloud
+    savePage(updatedConfig, result.editToken).catch((err) => {
+      console.warn('Initial post-payment cloud sync:', err);
+    });
+  };
+
+  // Admin complimentary free unlock
+  const handleAdminFreeUnlock = () => {
+    const updatedConfig: BirthdayPageConfig = {
+      ...config,
+      isPaid: true
+    };
+    setConfig(updatedConfig);
+    latestConfigRef.current = updatedConfig;
+    savePageLocally(updatedConfig);
+    setShowPaymentModal(false);
+    setIsAccessGranted(true);
+    setTokenVerificationStatus('valid');
+  };
+
+  // Creator manual token submission (if opening editor on a new browser without the full link)
+  const handleUnlockWithManualToken = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputToken.trim()) return;
+
+    setTokenError(null);
+    setTokenVerificationStatus('checking');
+
+    const cleanToken = inputToken.trim();
+    const check = await verifyTokenWithServer(config.id, cleanToken, authToken);
+
+    if (check.valid || check.isAdmin) {
+      storeEditToken(config.id, cleanToken);
+      setSearchParams({ token: cleanToken }, { replace: true });
+      const updated = { ...config, isPaid: true, editToken: cleanToken };
+      setConfig(updated);
+      latestConfigRef.current = updated;
+      setIsAccessGranted(true);
+      setShowPaymentModal(false);
+      setTokenVerificationStatus('valid');
+    } else {
+      setTokenVerificationStatus('invalid');
+      setTokenError('The edit token you entered is invalid for this birthday surprise.');
+    }
+  };
+
+  // Copy secret edit link
+  const secretEditLink = typeof window !== 'undefined'
+    ? `${window.location.origin}/editor/${config.id}?token=${currentToken || config.editToken || ''}`
+    : '';
+
+  const handleCopySecretEditLink = () => {
+    if (!secretEditLink) return;
+    navigator.clipboard.writeText(secretEditLink);
+    setCopiedSecretLink(true);
+    setTimeout(() => setCopiedSecretLink(false), 2500);
+  };
 
   // Explicit save action: persists data to Supabase ONLY on user manual action
-  // Autosave is completely disabled. Duplicate requests from repeated clicks are blocked.
   const executeSavePipeline = useCallback(async (customConfig?: BirthdayPageConfig) => {
     if (customConfig) {
       latestConfigRef.current = customConfig;
     }
 
-    // Requirement 4: Prevent duplicate requests when Save button is clicked multiple times
     if (isSavingRef.current) {
       return;
     }
 
     const target = latestConfigRef.current;
+    const effectiveToken = currentToken || target.editToken || null;
 
-    // Check if data actually has unsaved changes compared to last saved snapshot
-    // But NEVER skip if the page has not yet been persisted to the cloud database!
     if (isCloudPersistedRef.current && lastSavedConfigRef.current && areConfigsEqual(target, lastSavedConfigRef.current)) {
       setHasUnsavedChanges(false);
       setSaveStatus('saved');
@@ -156,16 +297,14 @@ export const EditorPage: React.FC = () => {
     setSaveMessage(null);
 
     try {
-      const configToSave = {
+      const configToSave: BirthdayPageConfig = {
         ...target,
+        isPaid: true,
+        editToken: effectiveToken || undefined,
         updatedAt: new Date().toISOString()
       };
-      const currentUser = userRef.current;
-      if (currentUser && !configToSave.userId) {
-        configToSave.userId = currentUser.id;
-      }
 
-      const res = await savePage(configToSave);
+      const res = await savePage(configToSave, effectiveToken);
       if (res.success) {
         isCloudPersistedRef.current = isSupabaseConfigured;
         const savedConfig = res.config || configToSave;
@@ -173,12 +312,13 @@ export const EditorPage: React.FC = () => {
         latestConfigRef.current = savedConfig;
         setConfig(savedConfig);
 
-        // If page ID changed (e.g. forked from another user's page to avoid RLS violation), update URL
         if (savedConfig.id !== id) {
-          navigate(`/editor/${savedConfig.id}`, { replace: true });
+          const newUrl = effectiveToken
+            ? `/editor/${savedConfig.id}?token=${effectiveToken}`
+            : `/editor/${savedConfig.id}`;
+          navigate(newUrl, { replace: true });
         }
 
-        // Requirement 7: Show "Saved successfully" only after Supabase confirms the save
         setSaveStatus('saved');
         setHasUnsavedChanges(false);
         setSaveMessage('Saved successfully!');
@@ -198,35 +338,27 @@ export const EditorPage: React.FC = () => {
     } finally {
       isSavingRef.current = false;
     }
-  }, [id, navigate]);
+  }, [id, navigate, currentToken]);
 
   const handleExplicitSave = useCallback((customConfig?: BirthdayPageConfig) => {
-    // Prevent duplicate requests from repeated button clicks while save is in flight
     if (isSavingRef.current) return;
     executeSavePipeline(customConfig);
   }, [executeSavePipeline]);
 
-  // Handle configuration updates from child components:
-  // - Requirement 1: Autosave completely disabled. Zero automatic network requests.
-  // - Requirement 6: Keep unsaved changes in editor state and local storage until explicitly saved.
-  // - Requirement 7: Marks hasUnsavedChanges = true to show the Unsaved changes indicator.
   const handleUpdateConfig = useCallback((updated: Partial<BirthdayPageConfig>) => {
     setConfig((prev) => {
       const merged = { ...prev, ...updated };
       latestConfigRef.current = merged;
 
-      // Track if content differs from last successfully saved snapshot
       const hasActualChanges = !areConfigsEqual(merged, lastSavedConfigRef.current);
       setHasUnsavedChanges(hasActualChanges);
 
-      // Local storage persistence for crash safety without sending any Supabase network request
       savePageLocally(merged);
-
       return merged;
     });
   }, []);
 
-  // Safe local backup on tab close or refresh (0 network requests)
+  // Safe local backup on tab close or refresh
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (latestConfigRef.current) {
@@ -235,7 +367,6 @@ export const EditorPage: React.FC = () => {
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
@@ -251,6 +382,188 @@ export const EditorPage: React.FC = () => {
 
   const publicUrl = `${window.location.origin}/b/${config.slug || config.id}`;
 
+  // =========================================================================
+  // RENDER: Loading State
+  // =========================================================================
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#160D1F] flex flex-col items-center justify-center text-[#E8C982] gap-3">
+        <div className="w-10 h-10 rounded-full border-2 border-[#E8C982] border-t-transparent animate-spin" />
+        <span className="text-xs text-slate-400 font-medium tracking-wide">Loading Birthday Magic Studio…</span>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // RENDER: Payment Required Modal Screen
+  // =========================================================================
+  if (showPaymentModal && !isAccessGranted) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+        <Navbar config={config} isEditor={false} />
+        <PaymentUnlockModal
+          initialRecipientName={config.recipientName}
+          surpriseId={config.id}
+          slug={config.slug}
+          initialConfig={config}
+          isOpen={true}
+          onSuccess={handlePaymentSuccess}
+          onAdminFreeUnlock={handleAdminFreeUnlock}
+        />
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // RENDER: Restricted Access Screen (Paid surprise, but edit token missing or invalid)
+  // =========================================================================
+  if (!isAccessGranted && !isAdmin) {
+    if (showPaymentModal) {
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+          <Navbar config={config} isEditor={false} />
+          <PaymentUnlockModal
+            isOpen={true}
+            surpriseId={config.id}
+            slug={config.slug}
+            initialConfig={config}
+            initialRecipientName={config.recipientName}
+            onSuccess={handlePaymentSuccess}
+            onAdminFreeUnlock={handleAdminFreeUnlock}
+            onUnlockWithToken={(token) => {
+              setInputToken(token);
+              verifyTokenWithServer(config.id, token, authToken).then((check) => {
+                if (check.valid || check.isAdmin) {
+                  storeEditToken(config.id, token);
+                  setSearchParams({ token }, { replace: true });
+                  const updated = { ...config, isPaid: true, editToken: token };
+                  setConfig(updated);
+                  latestConfigRef.current = updated;
+                  setIsAccessGranted(true);
+                  setShowPaymentModal(false);
+                  setTokenVerificationStatus('valid');
+                } else {
+                  alert('The edit token you entered is invalid for this birthday surprise.');
+                }
+              });
+            }}
+            onClose={() => navigate('/')}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+        <Navbar config={config} isEditor={false} />
+        
+        <div className="flex-1 max-w-lg w-full mx-auto p-4 sm:p-6 flex flex-col justify-center my-auto">
+          <div className="bg-gradient-to-b from-slate-900 to-[#160D1F] border border-white/15 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 text-center animate-in fade-in zoom-in-95">
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 flex items-center justify-center mx-auto shadow-lg">
+              <Lock className="w-7 h-7" />
+            </div>
+
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-white">
+                Creator Edit Access Required
+              </h2>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                This birthday surprise is protected from unauthorized changes. If you are the creator, enter your secret edit token below or open your bookmarked Secret Edit Link.
+              </p>
+            </div>
+
+            {/* Clear Pricing & Edit Rule Callout */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs leading-relaxed text-left flex items-start gap-2.5">
+              <Sparkles className="w-4 h-4 text-[#E8C982] shrink-0 mt-0.5" />
+              <div>
+                <p className="font-extrabold text-amber-300 text-[13px]">
+                  ₹40 per birthday surprise. Once purchased, you can edit that surprise again without paying.
+                </p>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  If you previously created this surprise, you do not need to pay again—simply enter your secret edit token.
+                </p>
+              </div>
+            </div>
+
+            {/* Manual Token Unlock Form */}
+            <form onSubmit={handleUnlockWithManualToken} className="space-y-3 pt-1 text-left">
+              <label className="block text-xs font-semibold text-slate-300">
+                Enter your Secret Edit Token
+              </label>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  required
+                  value={inputToken}
+                  onChange={(e) => setInputToken(e.target.value)}
+                  placeholder="bday_edit_..."
+                  className="w-full bg-slate-950 border border-white/20 focus:border-pink-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-100 font-mono outline-none"
+                />
+              </div>
+
+              {tokenError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{tokenError}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={tokenVerificationStatus === 'checking'}
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-xs text-white bg-pink-500 hover:bg-pink-600 transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-60"
+              >
+                {tokenVerificationStatus === 'checking' ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Verifying Token…</span>
+                  </>
+                ) : (
+                  <span>Unlock Creator Studio</span>
+                )}
+              </button>
+            </form>
+
+            {/* New Surprise Notice & Temporary Payment Unavailability */}
+            <div className="pt-4 border-t border-white/10 space-y-3">
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs text-left">
+                <p className="font-bold">Want to create a separate birthday surprise?</p>
+                <p className="text-[11px] text-slate-300 mt-1">
+                  Payments are temporarily unavailable. Please try again later.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={true}
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-xs text-slate-400 bg-white/5 border border-white/10 cursor-not-allowed flex items-center justify-center gap-2 opacity-75"
+                title="Payments are temporarily unavailable. Please try again later."
+              >
+                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                <span>Create a New Surprise (₹40 - Temporarily Unavailable)</span>
+              </button>
+
+              <div className="pt-1 flex items-center justify-between text-[11px] text-slate-400">
+                <Link to="/" className="hover:text-white transition-colors flex items-center gap-1">
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to Website</span>
+                </Link>
+                <Link to="/admin" className="text-amber-300/80 hover:text-amber-300 transition-colors flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Admin Portal</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // RENDER: Full Unlocked Creator Studio
+  // =========================================================================
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-pink-500 selection:text-white">
       {/* Top Navbar */}
@@ -259,6 +572,38 @@ export const EditorPage: React.FC = () => {
         isEditor={true}
         onOpenShareModal={() => setIsShareModalOpen(true)}
       />
+
+      {/* Secret Creator Edit Link Banner (Requirement 3: Creator retention & recovery) */}
+      {!dismissSecretBanner && currentToken && (
+        <div className="bg-gradient-to-r from-amber-500/15 via-pink-500/15 to-purple-500/15 border-b border-white/10 px-3 sm:px-6 py-2.5 text-xs">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="p-1 rounded-lg bg-[#E8C982]/20 text-[#E8C982] shrink-0 font-bold">🔒 Private Link</span>
+              <span className="text-slate-200 truncate">
+                <strong>Your Secret Edit Link:</strong> Bookmark this link to edit this surprise in the future without paying again!
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleCopySecretEditLink}
+                className="px-3 py-1 rounded-lg bg-pink-500 hover:bg-pink-600 text-white font-bold flex items-center gap-1.5 transition-colors cursor-pointer text-xs shadow"
+                title="Copy secret edit link to clipboard"
+              >
+                {copiedSecretLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedSecretLink ? 'Copied Secret Link!' : 'Copy Secret Edit Link'}</span>
+              </button>
+              <button
+                onClick={() => setDismissSecretBanner(true)}
+                className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                title="Dismiss banner"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Editor Sub-Header Toolbar */}
       <div className="bg-slate-900/95 border-b border-white/10 px-3 sm:px-6 py-2.5 sticky top-16 z-30 backdrop-blur-md">
@@ -274,7 +619,7 @@ export const EditorPage: React.FC = () => {
 
             <span className="text-slate-600 hidden sm:inline">|</span>
 
-            {/* Save Status Badge (Requirement 7: clear Unsaved changes and Saved successfully indicators) */}
+            {/* Save Status Badge */}
             <div className="flex items-center gap-1.5 text-xs shrink-0 font-medium" aria-live="polite">
               {saveStatus === 'saving' && (
                 <span className="flex items-center gap-1.5 text-amber-400 animate-pulse font-medium">
@@ -335,7 +680,7 @@ export const EditorPage: React.FC = () => {
               </span>
             </button>
 
-            {/* Mobile View Switcher (Visible on screens < 1024px) */}
+            {/* Mobile View Switcher */}
             <div className="flex lg:hidden items-center bg-slate-950 p-0.5 rounded-xl border border-white/10 text-xs">
               <button
                 onClick={() => setViewMode('editor-only')}
@@ -357,7 +702,7 @@ export const EditorPage: React.FC = () => {
               </button>
             </div>
 
-            {/* Desktop View Mode Toggle (Visible on screens >= 1024px) */}
+            {/* Desktop View Mode Toggle */}
             <div className="hidden lg:flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-white/10 text-xs">
               <button
                 onClick={() => setViewMode('split')}
@@ -385,7 +730,7 @@ export const EditorPage: React.FC = () => {
               </button>
             </div>
 
-            {/* Quick Open Live Page or Publish to Share */}
+            {/* Quick Open Live Page or Publish */}
             {config.isPublished ? (
               <a
                 href={publicUrl}
@@ -493,7 +838,10 @@ export const EditorPage: React.FC = () => {
                         setSaveMessage(null);
                       }, 3000);
                       if (publishedConfig.id !== id) {
-                        navigate(`/editor/${publishedConfig.id}`, { replace: true });
+                        const newUrl = currentToken
+                          ? `/editor/${publishedConfig.id}?token=${currentToken}`
+                          : `/editor/${publishedConfig.id}`;
+                        navigate(newUrl, { replace: true });
                       }
                     }}
                   />
@@ -530,11 +878,13 @@ export const EditorPage: React.FC = () => {
             setSaveMessage(null);
           }, 3000);
           if (publishedConfig.id !== id) {
-            navigate(`/editor/${publishedConfig.id}`, { replace: true });
+            const newUrl = currentToken
+              ? `/editor/${publishedConfig.id}?token=${currentToken}`
+              : `/editor/${publishedConfig.id}`;
+            navigate(newUrl, { replace: true });
           }
         }}
       />
     </div>
   );
 };
-

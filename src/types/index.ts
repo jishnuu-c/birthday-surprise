@@ -84,6 +84,9 @@ export interface BirthdayPageConfig {
   updatedAt: string;
   isPublished: boolean;
   passcode?: string;
+  isPaid?: boolean;
+  paymentId?: string;
+  editToken?: string;
 
   // Recipient details
   recipientName: string;
@@ -164,3 +167,28 @@ export interface BuiltInAudioTrack {
   url?: string;
   durationEstimate: string;
 }
+
+export interface PaymentRecord {
+  id: string;
+  surprise_id: string;
+  razorpay_order_id: string;
+  razorpay_payment_id?: string;
+  razorpay_signature?: string;
+  amount: number;
+  currency: string;
+  status: 'created' | 'paid' | 'failed' | 'cancelled';
+  customer_email?: string;
+  customer_phone?: string;
+  created_at: string;
+  updated_at: string;
+  recipient_name?: string;
+}
+
+export interface AdminStats {
+  totalSurprises: number;
+  totalPublished: number;
+  totalPaid: number;
+  totalRevenue: number;
+  payments: PaymentRecord[];
+}
+

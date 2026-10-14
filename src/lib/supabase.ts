@@ -653,29 +653,71 @@ export async function ensurePersistentMedia(
  * and sections.
  */
 export async function saveRemoteBirthdayPage(
-  config: BirthdayPageConfig
+  config: BirthdayPageConfig,
+  editToken?: string | null
 ): Promise<{ success: boolean; error?: string; config?: BirthdayPageConfig }> {
   if (!supabase) {
     return { success: false, error: supabaseConfigError || 'Supabase credentials not configured' };
   }
 
   try {
-    const user = await getOrCreateCurrentUser();
-    if (!user) {
-      return { 
-        success: false, 
-        error: 'Authentication required: please sign in or create an account to save your birthday surprise to the cloud.' 
-      };
-    }
-
     // Ensure all media URLs are persistent cloud storage URLs
     const mediaRes = await ensurePersistentMedia(config);
     if (mediaRes.error) {
       return { success: false, error: mediaRes.error };
     }
 
+    const targetConfig = mediaRes.config;
+
+    // Check for edit token from parameter, config, or localStorage
+    let effectiveToken = editToken || targetConfig.editToken || null;
+    if (!effectiveToken && typeof window !== 'undefined' && targetConfig.id) {
+      try {
+        effectiveToken = localStorage.getItem(`bday_edit_token_${targetConfig.id}`);
+      } catch {
+        // ignore
+      }
+    }
+
+    // If edit token is present or we are running in browser without an authenticated Supabase user session,
+    // try the secure server endpoint /api/save-surprise first
+    if (effectiveToken && typeof window !== 'undefined' && typeof fetch !== 'undefined') {
+      try {
+        const apiRes = await fetch('/api/save-surprise', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: targetConfig.id,
+            token: effectiveToken,
+            config: targetConfig,
+            isPublished: targetConfig.isPublished
+          })
+        });
+
+        if (apiRes.ok) {
+          const apiData = await apiRes.json();
+          if (apiData.success && apiData.config) {
+            const savedCfg = apiData.config as BirthdayPageConfig;
+            // Update cache
+            const entry: CacheEntry = { config: savedCfg, timestamp: Date.now() };
+            remotePageCache.set(savedCfg.id, entry);
+            if (savedCfg.slug) remotePageCache.set(savedCfg.slug, entry);
+            return { success: true, config: savedCfg };
+          }
+        }
+      } catch (apiErr) {
+        console.warn('API save fallback to direct Supabase:', apiErr);
+      }
+    }
+
+    // Direct Supabase fallback (for admin sessions or test environments)
+    const user = await getOrCreateCurrentUser();
+    if (!user) {
+      return { success: false, error: 'Authentication session required for direct database write.' };
+    }
+
     const cleanConfig: BirthdayPageConfig = {
-      ...mediaRes.config,
+      ...targetConfig,
       userId: user.id,
       updatedAt: new Date().toISOString()
     };
@@ -921,17 +963,14 @@ export async function uploadRemoteMedia(
   }
 
   try {
-    const user = await getOrCreateCurrentUser();
-    if (!user) {
-      return { url: null, error: 'Authentication required for upload. Please sign in or use guest session.' };
-    }
-
+    const user = await getCurrentUser();
     const bucket = 'birthday-media';
     const originalName = customFilename || (file instanceof File ? file.name : `media-${Date.now()}`);
     const cleanName = originalName.toLowerCase().replace(/[^a-z0-9.-]/g, '_');
     
-    // Store in user-scoped path for clean RLS management: userId/folder/timestamp-name
-    const path = `${user.id}/${folder}/${Date.now()}-${cleanName}`;
+    // Store in creator or user-scoped path for clean storage management
+    const scopePrefix = user ? user.id : 'creator';
+    const path = `${scopePrefix}/${folder}/${Date.now()}-${cleanName}`;
 
     const { error: uploadError } = await withRateLimitRetry(async () => {
       return await supabase!.storage

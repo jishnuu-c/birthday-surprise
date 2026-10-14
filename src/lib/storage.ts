@@ -379,7 +379,8 @@ export function savePageLocally(config: BirthdayPageConfig): { success: boolean;
  * Unified save function: saves locally and syncs complete configuration to Supabase if configured
  */
 export async function savePage(
-  config: BirthdayPageConfig
+  config: BirthdayPageConfig,
+  editToken?: string | null
 ): Promise<{ success: boolean; error?: string; config?: BirthdayPageConfig }> {
   const localRes = savePageLocally(config);
   if (!localRes.success) {
@@ -387,7 +388,7 @@ export async function savePage(
   }
 
   if (isSupabaseConfigured) {
-    const remoteRes = await saveRemoteBirthdayPage(config);
+    const remoteRes = await saveRemoteBirthdayPage(config, editToken);
     if (!remoteRes.success) {
       return {
         success: false,
@@ -404,7 +405,8 @@ export async function savePage(
 }
 
 export async function saveAndPublishPage(
-  config: BirthdayPageConfig
+  config: BirthdayPageConfig,
+  editToken?: string | null
 ): Promise<{ success: boolean; url: string; config?: BirthdayPageConfig; error?: string }> {
   let targetConfig = { ...config };
 
@@ -433,7 +435,7 @@ export async function saveAndPublishPage(
     updatedAt: new Date().toISOString()
   };
 
-  const saveRes = await savePage(publishedConfig);
+  const saveRes = await savePage(publishedConfig, editToken);
   if (!saveRes.success) {
     return {
       success: false,
