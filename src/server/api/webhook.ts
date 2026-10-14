@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleRazorpayWebhook } from '../src/server/paymentHandlers';
+import { handleRazorpayWebhook } from '../paymentHandlers';
 
 interface ExtendedRequest extends IncomingMessage {
   body?: any;
@@ -36,6 +36,6 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
     const msg = err instanceof Error ? err.message : 'Internal Server Error';
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ success: false, error: msg }));
+    res.end(JSON.stringify({ error: msg }));
   }
 }

@@ -17,6 +17,7 @@ import {
   getRetryDelayMs,
   withRateLimitRetry,
   saveRemoteBirthdayPage,
+  getOrCreateCurrentUser,
   supabase
 } from '../lib/supabase';
 import { BirthdayPageConfig } from '../types';
@@ -283,6 +284,12 @@ describe('Auto-Save Optimization & Dirty Checking (areConfigsEqual)', () => {
 describe('Selective INSERT vs UPDATE Database Operations (Requirements 3 & 4)', () => {
   it('differentiates between new page creation (INSERT) and existing page edits (UPDATE)', async () => {
     if (!supabase) return;
+    const user = await getOrCreateCurrentUser();
+    if (!user) {
+      // In offline or CI environments where anonymous sign-ins are disabled on Supabase Auth,
+      // skip live remote DB integration assertions that require direct authenticated database writes
+      return;
+    }
 
     const testId = `bday-test-unit-${Date.now()}`;
     const newPage = createNewBirthdayPage('Unit Test Recipient');

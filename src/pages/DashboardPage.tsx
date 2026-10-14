@@ -52,12 +52,15 @@ export const DashboardPage: React.FC = () => {
       });
 
       if (res.ok) {
-        const data = await res.json();
-        if (data.authorized) {
-          setSurprises(data.surprises || []);
-          setPayments(data.payments || []);
-          if (data.metrics) {
-            setMetrics(data.metrics);
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data.authorized) {
+            setSurprises(data.surprises || []);
+            setPayments(data.payments || []);
+            if (data.metrics) {
+              setMetrics(data.metrics);
+            }
           }
         }
       }
@@ -116,13 +119,30 @@ export const DashboardPage: React.FC = () => {
         })
       });
 
-      const data = await res.json();
-      if (res.ok && data.success && data.surpriseId) {
+      let data: any = null;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
+        }
+      } else {
+        const text = await res.text();
+        console.error('Non-JSON server response from /api/admin:', res.status, text);
+        throw new Error(
+          res.status >= 500
+            ? `Server error (HTTP ${res.status}). Please check Vercel deployment logs and serverless functions.`
+            : `Server returned HTTP ${res.status}: ${text.slice(0, 100) || res.statusText}`
+        );
+      }
+
+      if (res.ok && data?.success && data?.surpriseId) {
         setShowFreeModal(false);
         setFreeRecipientName('');
         navigate(data.editUrl || `/editor/${data.surpriseId}`);
       } else {
-        alert(data.error || 'Failed to create complimentary surprise.');
+        alert(data?.error || `Failed to create complimentary surprise (HTTP ${res.status}).`);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error creating surprise';

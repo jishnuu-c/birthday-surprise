@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getAdminDashboardData, createAdminFreeSurprise, verifyAdminSession } from '../src/server/paymentHandlers';
+import { getAdminDashboardData, createAdminFreeSurprise, verifyAdminSession } from '../paymentHandlers';
 
 interface ExtendedRequest extends IncomingMessage {
   body?: any;

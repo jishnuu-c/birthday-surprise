@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { verifyRazorpayPayment } from '../src/server/paymentHandlers';
+import { createRazorpayOrder } from '../paymentHandlers';
 
 interface ExtendedRequest extends IncomingMessage {
   body?: any;
@@ -46,23 +46,8 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
       body = data ? JSON.parse(data) : {};
     }
 
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      surpriseId,
-      recipientName,
-      initialConfig
-    } = body || {};
-
-    const result = await verifyRazorpayPayment({
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      surpriseId,
-      recipientName,
-      initialConfig
-    });
+    const { recipientName, tempId, slug } = body || {};
+    const result = await createRazorpayOrder({ recipientName, tempId, slug });
 
     res.statusCode = result.success ? 200 : 400;
     res.setHeader('Content-Type', 'application/json');
@@ -71,6 +56,6 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
     const msg = err instanceof Error ? err.message : 'Internal Server Error';
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ success: false, error: msg }));
+    res.end(JSON.stringify({ error: msg }));
   }
 }

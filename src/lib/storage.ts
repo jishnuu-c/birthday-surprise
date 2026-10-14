@@ -212,6 +212,9 @@ export async function resolvePageAsync(
   options: { allowLocalFallback?: boolean; forceFresh?: boolean } = {}
 ): Promise<BirthdayPageConfig | null> {
   const result = await resolvePageDetailsAsync(idOrSlug, options);
+  if (!options.allowLocalFallback && result.status !== 'success') {
+    return null;
+  }
   return result.config;
 }
 

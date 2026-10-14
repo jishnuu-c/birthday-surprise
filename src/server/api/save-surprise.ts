@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { saveSurpriseWithToken } from '../src/server/paymentHandlers';
+import { saveSurpriseWithToken } from '../paymentHandlers';
 
 interface ExtendedRequest extends IncomingMessage {
   body?: any;
@@ -47,12 +47,12 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
     }
 
     const { id, token, config, isPublished } = body || {};
-    const adminAuthHeader = req.headers.authorization;
+    const authHeader = req.headers.authorization;
 
     const result = await saveSurpriseWithToken({
       id,
       token,
-      adminAuthHeader,
+      adminAuthHeader: authHeader,
       config: config || {},
       isPublished
     });
@@ -64,6 +64,6 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
     const msg = err instanceof Error ? err.message : 'Internal Server Error';
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ success: false, error: msg }));
+    res.end(JSON.stringify({ error: msg }));
   }
 }
