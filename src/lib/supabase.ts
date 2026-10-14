@@ -298,7 +298,9 @@ export async function getOrCreateCurrentUser(): Promise<User | null> {
 }
 
 interface CacheEntry {
-  config: BirthdayPageConfig;
+  config: BirthdayPageConfig | null;
+  status?: 'success' | 'unpublished' | 'not_found' | 'error';
+  error?: string;
   timestamp: number;
 }
 const remotePageCache = new Map<string, CacheEntry>();
@@ -344,11 +346,19 @@ export async function fetchRemoteBirthdayPageDetailed(
   // 1. Check in-memory cache if not forcing fresh fetch
   if (!forceFresh) {
     const cached = remotePageCache.get(key) || remotePageCache.get(lowerKey);
-    if (cached && (Date.now() - cached.timestamp < PAGE_CACHE_TTL_MS)) {
-      return {
-        config: cached.config,
-        status: cached.config.isPublished ? 'success' : 'unpublished'
-      };
+    if (cached) {
+      const ttl = cached.status === 'not_found' ? 10_000 : PAGE_CACHE_TTL_MS;
+      if (Date.now() - cached.timestamp < ttl) {
+        if (cached.config) {
+          return {
+            config: cached.config,
+            status: cached.config.isPublished ? 'success' : 'unpublished'
+          };
+        }
+        if (cached.status === 'not_found') {
+          return { config: null, status: 'not_found' };
+        }
+      }
     }
   }
 
@@ -391,7 +401,8 @@ export async function fetchRemoteBirthdayPageDetailed(
         pageConfig.updatedAt = row.updated_at || pageConfig.updatedAt;
 
         // Cache result by key, lowercase key, id, and slug
-        const entry: CacheEntry = { config: pageConfig, timestamp: Date.now() };
+        const status = row.is_published === false ? 'unpublished' : 'success';
+        const entry: CacheEntry = { config: pageConfig, status, timestamp: Date.now() };
         remotePageCache.set(key, entry);
         if (lowerKey !== key) remotePageCache.set(lowerKey, entry);
         if (pageConfig.id) remotePageCache.set(pageConfig.id, entry);
@@ -404,6 +415,9 @@ export async function fetchRemoteBirthdayPageDetailed(
         return { config: pageConfig, status: 'success' };
       }
 
+      const notFoundEntry: CacheEntry = { config: null, status: 'not_found', timestamp: Date.now() };
+      remotePageCache.set(key, notFoundEntry);
+      if (lowerKey !== key) remotePageCache.set(lowerKey, notFoundEntry);
       return { config: null, status: 'not_found' };
     } catch (err: unknown) {
       console.warn('Failed to query remote birthday page from Supabase:', err);

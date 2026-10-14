@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { BirthdayPageConfig } from '../types';
 import { resolvePageDetailsAsync, resolvePageAsync, getPageById } from '../lib/storage';
@@ -7,16 +7,18 @@ import { ThemeBackground } from '../components/common/ThemeBackground';
 import { FloatingMusicPlayer } from '../components/common/FloatingMusicPlayer';
 import { GiftBoxLanding } from '../components/surprise/GiftBoxLanding';
 import { CelebrationHero } from '../components/surprise/CelebrationHero';
-import { PhotoGallery } from '../components/surprise/PhotoGallery';
-import { VideoSurprise } from '../components/surprise/VideoSurprise';
-import { PersonalLetter } from '../components/surprise/PersonalLetter';
-import { MemoryTimeline } from '../components/surprise/MemoryTimeline';
-import { BirthdayCake } from '../components/surprise/BirthdayCake';
-import { SpecialReasons } from '../components/surprise/SpecialReasons';
-import { ScratchSurprise } from '../components/surprise/ScratchSurprise';
-import { FinalCelebration } from '../components/surprise/FinalCelebration';
-import { ShareModal } from '../components/surprise/ShareModal';
 import { Sparkles, Heart, Gift, Lock, ArrowRight, HelpCircle, RefreshCw, AlertTriangle, Edit3 } from 'lucide-react';
+
+// Lazy-load below-the-fold sections to ensure rapid first-screen load and 60 FPS gift opening transition
+const PhotoGallery = lazy(() => import('../components/surprise/PhotoGallery').then(m => ({ default: m.PhotoGallery })));
+const VideoSurprise = lazy(() => import('../components/surprise/VideoSurprise').then(m => ({ default: m.VideoSurprise })));
+const PersonalLetter = lazy(() => import('../components/surprise/PersonalLetter').then(m => ({ default: m.PersonalLetter })));
+const MemoryTimeline = lazy(() => import('../components/surprise/MemoryTimeline').then(m => ({ default: m.MemoryTimeline })));
+const BirthdayCake = lazy(() => import('../components/surprise/BirthdayCake').then(m => ({ default: m.BirthdayCake })));
+const SpecialReasons = lazy(() => import('../components/surprise/SpecialReasons').then(m => ({ default: m.SpecialReasons })));
+const ScratchSurprise = lazy(() => import('../components/surprise/ScratchSurprise').then(m => ({ default: m.ScratchSurprise })));
+const FinalCelebration = lazy(() => import('../components/surprise/FinalCelebration').then(m => ({ default: m.FinalCelebration })));
+const ShareModal = lazy(() => import('../components/surprise/ShareModal').then(m => ({ default: m.ShareModal })));
 
 type PageStatus = 'loading' | 'success' | 'unpublished' | 'not_found' | 'error' | 'invalid_slug';
 
@@ -137,17 +139,34 @@ export const PublicSurprisePage: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Preload primary celebration media while the user is viewing the Gift Box landing screen
+  // Preload primary celebration media and below-the-fold code chunks while viewing Gift Landing
   useEffect(() => {
     if (!config) return;
     if (config.profilePhotoUrl && config.profilePhotoUrl.startsWith('http')) {
       const img = new Image();
       img.src = config.profilePhotoUrl;
     }
-    if (config.galleryPhotos?.[0]?.url && config.galleryPhotos[0].url.startsWith('http')) {
-      const img = new Image();
-      img.src = config.galleryPhotos[0].url;
-    }
+
+    // Preload below-the-fold modules in background after initial render during browser idle
+    const preloadTimer = window.setTimeout(() => {
+      const preloadChunks = () => {
+        import('../components/surprise/PhotoGallery');
+        import('../components/surprise/VideoSurprise');
+        import('../components/surprise/PersonalLetter');
+        import('../components/surprise/MemoryTimeline');
+        import('../components/surprise/BirthdayCake');
+        import('../components/surprise/SpecialReasons');
+        import('../components/surprise/ScratchSurprise');
+        import('../components/surprise/FinalCelebration');
+      };
+      if ('requestIdleCallback' in window) {
+        (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(preloadChunks);
+      } else {
+        preloadChunks();
+      }
+    }, 1000);
+
+    return () => window.clearTimeout(preloadTimer);
   }, [config]);
 
   const handlePasscodeSubmit = (e: React.FormEvent) => {
@@ -406,32 +425,40 @@ export const PublicSurprisePage: React.FC = () => {
             }}
           />
         ) : (
-          <div className="animate-in fade-in duration-1000">
+          <div className="animate-in fade-in duration-700">
             {sections.celebrationHero && <CelebrationHero config={config} />}
-            {sections.photoGallery && <PhotoGallery config={config} />}
-            {sections.birthdayVideo && <VideoSurprise config={config} />}
-            {sections.personalLetter && <PersonalLetter config={config} />}
-            {sections.memoryTimeline && <MemoryTimeline config={config} />}
-            {sections.birthdayCake && <BirthdayCake config={config} />}
-            {sections.reasonsSpecial && <SpecialReasons config={config} />}
-            {sections.scratchSurprise && <ScratchSurprise config={config} />}
-            {sections.finalCelebration && (
-              <FinalCelebration
-                config={config}
-                onOpenShareModal={() => setIsShareModalOpen(true)}
-              />
-            )}
+            <Suspense fallback={null}>
+              {sections.photoGallery && <div className="section-lazy-render"><PhotoGallery config={config} /></div>}
+              {sections.birthdayVideo && <div className="section-lazy-render"><VideoSurprise config={config} /></div>}
+              {sections.personalLetter && <div className="section-lazy-render"><PersonalLetter config={config} /></div>}
+              {sections.memoryTimeline && <div className="section-lazy-render"><MemoryTimeline config={config} /></div>}
+              {sections.birthdayCake && <div className="section-lazy-render"><BirthdayCake config={config} /></div>}
+              {sections.reasonsSpecial && <div className="section-lazy-render"><SpecialReasons config={config} /></div>}
+              {sections.scratchSurprise && <div className="section-lazy-render"><ScratchSurprise config={config} /></div>}
+              {sections.finalCelebration && (
+                <div className="section-lazy-render">
+                  <FinalCelebration
+                    config={config}
+                    onOpenShareModal={() => setIsShareModalOpen(true)}
+                  />
+                </div>
+              )}
+            </Suspense>
           </div>
         )}
       </main>
 
-      {/* Share Modal */}
-      <ShareModal
-        config={config}
-        isOpen={isShareModalOpen}
-        onClose={() => setIsShareModalOpen(false)}
-        publicUrl={publicUrl}
-      />
+      {/* Share Modal - dynamically loaded on demand */}
+      {isShareModalOpen && (
+        <Suspense fallback={null}>
+          <ShareModal
+            config={config}
+            isOpen={isShareModalOpen}
+            onClose={() => setIsShareModalOpen(false)}
+            publicUrl={publicUrl}
+          />
+        </Suspense>
+      )}
 
       {/* Subtle Bottom Floating Creator Watermark */}
       <div className="fixed bottom-3 left-3 sm:left-4 z-40">
@@ -448,3 +475,4 @@ export const PublicSurprisePage: React.FC = () => {
     </div>
   );
 };
+

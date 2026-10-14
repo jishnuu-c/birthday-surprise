@@ -23,6 +23,7 @@ export const GiftBoxLanding: React.FC<GiftBoxLandingProps> = ({
   const boxStyle = GIFT_BOX_STYLES[styleKey] || GIFT_BOX_STYLES['luxury-plum-gold'];
 
   const recipientDisplayName = config.recipientName || 'Someone Special';
+  const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const handleOpen = () => {
     if (isOpening) return;
@@ -38,10 +39,10 @@ export const GiftBoxLanding: React.FC<GiftBoxLandingProps> = ({
     // Fire golden celebration confetti & sparkles
     fireConfettiCannon();
 
-    // Fast, responsive, cinematic transition timeout (650ms)
+    // Fast, responsive, cinematic transition timeout (600ms on regular, 250ms on reduced motion)
     setTimeout(() => {
       onOpenSurprise();
-    }, 650);
+    }, prefersReducedMotion ? 250 : 600);
   };
 
   return (
@@ -49,40 +50,44 @@ export const GiftBoxLanding: React.FC<GiftBoxLandingProps> = ({
       {/* Scene 1: Cinematic Ambient Glows & Bokeh Lights */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10">
         {/* Soft Radial Ambient Plum / Burgundy Gradients */}
-        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-radial from-[#C72C55]/20 via-[#4A1028]/15 to-transparent blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-radial from-[#E8C982]/15 via-[#4A1028]/25 to-transparent blur-3xl opacity-75" />
-        <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-radial from-[#160D1F] via-[#4A1028]/20 to-transparent blur-3xl" />
+        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[320px] sm:w-[700px] h-[280px] sm:h-[500px] bg-radial from-[#C72C55]/20 via-[#4A1028]/15 to-transparent blur-lg sm:blur-3xl transform-gpu" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] sm:w-[600px] h-[300px] sm:h-[600px] bg-radial from-[#E8C982]/15 via-[#4A1028]/25 to-transparent blur-lg sm:blur-3xl opacity-75 transform-gpu" />
+        <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-[340px] sm:w-[800px] h-[240px] sm:h-[400px] bg-radial from-[#160D1F] via-[#4A1028]/20 to-transparent blur-lg sm:blur-3xl transform-gpu" />
 
-        {/* Floating Bokeh Dust & Tiny Stars */}
-        <motion.div
-          animate={{ y: [0, -35, 0], opacity: [0.3, 0.7, 0.3], scale: [1, 1.15, 1] }}
-          transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute top-16 left-[15%] w-3 h-3 rounded-full bg-[#E8C982]/50 blur-[1px]"
-        />
-        <motion.div
-          animate={{ y: [0, -45, 0], opacity: [0.2, 0.6, 0.2], scale: [1, 1.25, 1] }}
-          transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-          className="absolute top-1/3 right-[18%] w-4 h-4 rounded-full bg-[#F7DCE5]/40 blur-[2px]"
-        />
-        <motion.div
-          animate={{ y: [0, -25, 0], opacity: [0.4, 0.8, 0.4] }}
-          transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-          className="absolute bottom-1/4 left-[22%] w-2 h-2 rounded-full bg-[#E8C982]/60"
-        />
-        <motion.div
-          animate={{ rotate: [0, 360], scale: [0.8, 1.1, 0.8] }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
-          className="absolute top-28 right-[28%] text-[#E8C982]/40 text-xl"
-        >
-          ✦
-        </motion.div>
-        <motion.div
-          animate={{ rotate: [360, 0], scale: [1, 1.3, 1] }}
-          transition={{ duration: 15, repeat: Infinity, ease: 'linear', delay: 1 }}
-          className="absolute bottom-32 right-[15%] text-[#F7DCE5]/30 text-lg"
-        >
-          ✧
-        </motion.div>
+        {/* Floating Bokeh Dust & Tiny Stars - paused during gift opening to guarantee 60 FPS unboxing */}
+        {!isOpening && (
+          <>
+            <motion.div
+              animate={{ y: [0, -35, 0], opacity: [0.3, 0.7, 0.3], scale: [1, 1.15, 1] }}
+              transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute top-16 left-[15%] w-3 h-3 rounded-full bg-[#E8C982]/50 blur-[1px] transform-gpu"
+            />
+            <motion.div
+              animate={{ y: [0, -45, 0], opacity: [0.2, 0.6, 0.2], scale: [1, 1.25, 1] }}
+              transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+              className="absolute top-1/3 right-[18%] w-4 h-4 rounded-full bg-[#F7DCE5]/40 blur-[2px] transform-gpu"
+            />
+            <motion.div
+              animate={{ y: [0, -25, 0], opacity: [0.4, 0.8, 0.4] }}
+              transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+              className="absolute bottom-1/4 left-[22%] w-2 h-2 rounded-full bg-[#E8C982]/60 transform-gpu"
+            />
+            <motion.div
+              animate={{ rotate: [0, 360], scale: [0.8, 1.1, 0.8] }}
+              transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
+              className="absolute top-28 right-[28%] text-[#E8C982]/40 text-xl transform-gpu"
+            >
+              ✦
+            </motion.div>
+            <motion.div
+              animate={{ rotate: [360, 0], scale: [1, 1.3, 1] }}
+              transition={{ duration: 15, repeat: Infinity, ease: 'linear', delay: 1 }}
+              className="absolute bottom-32 right-[15%] text-[#F7DCE5]/30 text-lg transform-gpu"
+            >
+              ✧
+            </motion.div>
+          </>
+        )}
       </div>
 
       {/* Scene 1: Top Greeting Header with Luxury Badge */}
@@ -172,40 +177,46 @@ export const GiftBoxLanding: React.FC<GiftBoxLandingProps> = ({
 
         {/* 3D Box Levitation Container */}
         <motion.div
-          className="relative w-48 h-48 xs:w-56 xs:h-56 sm:w-64 sm:h-64 mx-auto preserve-3d"
-          animate={{
-            scale: isOpening ? [1, 1.15, 1.25] : isHovered ? 1.05 : [1, 1.025, 1],
-            rotateY: isOpening ? 20 : isHovered ? 8 : [0, 2, -2, 0],
-            rotateX: isHovered ? 4 : 0,
-            y: isOpening ? -25 : [0, -8, 0]
-          }}
+          className="relative w-48 h-48 xs:w-56 xs:h-56 sm:w-64 sm:h-64 mx-auto preserve-3d transform-gpu will-change-transform"
+          animate={
+            prefersReducedMotion
+              ? { scale: isOpening ? 1.05 : 1 }
+              : {
+                  scale: isOpening ? [1, 1.15, 1.25] : isHovered ? 1.05 : [1, 1.025, 1],
+                  rotateY: isOpening ? 20 : isHovered ? 8 : [0, 2, -2, 0],
+                  rotateX: isHovered ? 4 : 0,
+                  y: isOpening ? -25 : [0, -8, 0]
+                }
+          }
           transition={{
-            duration: isOpening ? 1.4 : 4,
+            duration: isOpening ? (prefersReducedMotion ? 0.3 : 1.4) : 4,
             repeat: isOpening ? 0 : Infinity,
             ease: 'easeInOut'
           }}
         >
           {/* Animated 3D Lid & Bow Knot */}
           <motion.div
-            className="absolute top-0 left-[-4%] w-[108%] h-14 sm:h-16 rounded-2xl z-20 shadow-2xl flex items-center justify-center preserve-3d border border-[#E8C982]/40"
+            className="absolute top-0 left-[-4%] w-[108%] h-14 sm:h-16 rounded-2xl z-20 shadow-2xl flex items-center justify-center preserve-3d border border-[#E8C982]/40 transform-gpu will-change-transform"
             style={{
               background: boxStyle.lidColor,
               boxShadow: '0 15px 30px -5px rgba(0,0,0,0.6), inset 0 2px 4px rgba(255,255,255,0.3)'
             }}
             animate={
               isOpening
-                ? {
-                    y: -150,
-                    rotateX: -40,
-                    rotateZ: 15,
-                    opacity: 0,
-                    scale: 0.85
-                  }
+                ? prefersReducedMotion
+                  ? { y: -40, opacity: 0 }
+                  : {
+                      y: -150,
+                      rotateX: -40,
+                      rotateZ: 15,
+                      opacity: 0,
+                      scale: 0.85
+                    }
                 : {
                     y: isHovered ? -8 : 0
                   }
             }
-            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: prefersReducedMotion ? 0.25 : 0.55, ease: [0.22, 1, 0.36, 1] }}
           >
             {/* Bevel highlight */}
             <div className="absolute top-0 inset-x-0 h-[2px] bg-white/40 rounded-t-2xl" />

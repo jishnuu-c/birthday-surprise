@@ -104,6 +104,8 @@ export const VideoSurprise: React.FC<VideoSurpriseProps> = ({ config }) => {
                   src={config.videoThumbnailUrl}
                   alt="Video thumbnail"
                   className="w-full h-full object-cover opacity-85 group-hover:scale-105 transition-transform duration-700"
+                  loading="lazy"
+                  decoding="async"
                 />
               ) : (
                 <div className="w-full h-full bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 flex items-center justify-center">

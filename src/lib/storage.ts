@@ -171,8 +171,12 @@ export async function resolvePageDetailsAsync(
         }
       }
 
-      // If returned null, check whether it was due to a database/network error
-      const remoteRes = await fetchRemoteBirthdayPageDetailed(idOrSlug, forceFresh);
+      // If returned null, check whether it was due to a database/network error or unpublished draft (re-using cached result)
+      const remoteRes = await fetchRemoteBirthdayPageDetailed(idOrSlug, false);
+      if (remoteRes.status === 'unpublished' && remoteRes.config) {
+        const resolved = await resolveLocalMediaUrls(remoteRes.config);
+        return { config: resolved, status: 'unpublished' };
+      }
       if (remoteRes.status === 'error') {
         // Supabase network failure, rate limit HTTP 429, or PostgREST error - NOT a 404!
         return { config: null, status: 'error', error: remoteRes.error };

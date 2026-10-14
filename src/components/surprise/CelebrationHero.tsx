@@ -101,13 +101,15 @@ export const CelebrationHero: React.FC<CelebrationHeroProps> = ({
           />
 
           {/* Card Frame */}
-          <div className="relative w-56 h-56 sm:w-72 sm:h-72 md:w-80 md:h-80 rounded-3xl overflow-hidden p-2 bg-[#160D1F]/90 backdrop-blur-md border border-[#E8C982]/35 shadow-2xl transition-transform duration-500 group-hover:scale-[1.03]">
+          <div className="relative w-56 h-56 sm:w-72 sm:h-72 md:w-80 md:h-80 rounded-3xl overflow-hidden p-2 bg-[#160D1F]/90 backdrop-blur-md border border-[#E8C982]/35 shadow-2xl transition-transform duration-500 group-hover:scale-[1.03] transform-gpu">
             {config.profilePhotoUrl ? (
               <img
                 src={config.profilePhotoUrl}
                 alt={recipient}
                 className="w-full h-full object-cover rounded-2xl"
                 loading="eager"
+                decoding="async"
+                fetchPriority="high"
               />
             ) : (
               <div className="w-full h-full rounded-2xl bg-gradient-to-tr from-[#C72C55]/20 to-[#4A1028]/40 flex flex-col items-center justify-center p-6 text-center">

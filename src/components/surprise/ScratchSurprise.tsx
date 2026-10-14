@@ -42,15 +42,8 @@ export const ScratchSurprise: React.FC<ScratchSurpriseProps> = ({ config }) => {
     ctx.font = '11px Outfit, sans-serif';
     ctx.fillText('To reveal your secret surprise voucher', width / 2, height / 2 + 14);
 
-    const scratch = (x: number, y: number) => {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.beginPath();
-      ctx.arc(x, y, 22, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Check percentage cleared
-      checkClearedPercentage();
-    };
+    let lastCheckTime = 0;
+    let throttleTimer: number | null = null;
 
     const checkClearedPercentage = () => {
       try {
@@ -73,13 +66,44 @@ export const ScratchSurprise: React.FC<ScratchSurpriseProps> = ({ config }) => {
       }
     };
 
+    const scheduleCheckCleared = (force = false) => {
+      const now = performance.now();
+      if (force || now - lastCheckTime > 180) {
+        lastCheckTime = now;
+        if (throttleTimer) {
+          window.clearTimeout(throttleTimer);
+          throttleTimer = null;
+        }
+        checkClearedPercentage();
+      } else if (!throttleTimer) {
+        throttleTimer = window.setTimeout(() => {
+          lastCheckTime = performance.now();
+          throttleTimer = null;
+          checkClearedPercentage();
+        }, 180);
+      }
+    };
+
+    const scratch = (x: number, y: number) => {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      ctx.arc(x, y, 22, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Throttled check to avoid synchronous GPU stall on mobile
+      scheduleCheckCleared(false);
+    };
+
     const handlePointerDown = (e: MouseEvent | TouchEvent) => {
       isDrawingRef.current = true;
       handlePointerMove(e);
     };
 
     const handlePointerUp = () => {
-      isDrawingRef.current = false;
+      if (isDrawingRef.current) {
+        isDrawingRef.current = false;
+        scheduleCheckCleared(true);
+      }
     };
 
     const handlePointerMove = (e: MouseEvent | TouchEvent) => {
@@ -101,6 +125,7 @@ export const ScratchSurprise: React.FC<ScratchSurpriseProps> = ({ config }) => {
     window.addEventListener('touchend', handlePointerUp);
 
     return () => {
+      if (throttleTimer) window.clearTimeout(throttleTimer);
       canvas.removeEventListener('mousedown', handlePointerDown);
       canvas.removeEventListener('mousemove', handlePointerMove);
       window.removeEventListener('mouseup', handlePointerUp);
